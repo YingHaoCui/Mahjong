@@ -1,0 +1,10 @@
+{
+  "name": "mahjong-arena",
+  "private": true,
+  "type": "module",
+  "scripts": {"test:web": "node tests/test_web.mjs"},
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@playwright/test": "1.61.1"
+  }
+}

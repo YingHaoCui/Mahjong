@@ -1,0 +1,28 @@
+name: Mahjong arena
+on: [push, pull_request]
+jobs:
+  arena:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: python -m unittest discover -s tests -v
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:web
+      - run: docker build -t mahjong-arena .
+      - name: Smoke test container
+        run: |
+          docker run -d --name mahjong-test -p 8080:8080 mahjong-arena
+          for attempt in $(seq 1 30); do
+            if curl --fail http://localhost:8080/healthz; then exit 0; fi
+            sleep 1
+          done
+          docker logs mahjong-test
+          exit 1

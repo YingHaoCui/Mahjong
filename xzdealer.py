@@ -7,7 +7,8 @@ from copy import deepcopy
 class MahjongDealer(object):
     ''' Initialize a mahjong dealer class
     '''
-    def __init__(self):
+    def __init__(self, rng=None):
+        self.rng = rng if rng is not None else random
         self.deck = init_deck() #sl from xzutils
         self.shuffle()
         self.table = [] #sl define one ability/parameter of the dealer
@@ -27,7 +28,7 @@ class MahjongDealer(object):
     def shuffle(self):
         ''' Shuffle the deck
         '''
-        random.shuffle(self.deck)
+        self.rng.shuffle(self.deck)
 
     def deal_cards(self, player, num): #sl: = player draws a mjzero tile from the wall
         ''' Deal some cards (which are indeed mjzero tiles) from deck to one player

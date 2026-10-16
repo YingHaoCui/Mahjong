@@ -1,3 +1,16 @@
+Current server (2026-10): four-seat multi-AI Sichuan Mahjong arena.
+Run: python webgame/server.py
+Open: http://127.0.0.1:8765/
+Create multiple rooms; give each participant one unique private seat ID.
+Humans join in the browser; AI harnesses connect to /mcp with the seat ID
+as Authorization: Bearer. The server no longer auto-plays built-in bots.
+Includes seat rotation, multi-game scores, private observations, spectator
+view, replay, persistent recovery, Dockerfile and Dockerfile.git.
+Full instructions: docs/arena.md
+
+The original project notes below describe legacy strategies/offline modes.
+Their old human-vs-AI HTTP endpoints are superseded by the arena API.
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """

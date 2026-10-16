@@ -18,12 +18,17 @@ if not getattr(sys, 'frozen', False):
     sys.path.insert(0, _WEBGAME)
 
 import webview
-from http.server import ThreadingHTTPServer
-from server import Handler
+from pathlib import Path
+from server import ArenaHTTPServer, start_timer
+from arena import ArenaStore
 
 
 def main():
-    httpd = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    os.umask(0o077)
+    data_dir = os.environ.get('ARENA_DATA_DIR', str(Path.home() / 'Library' / 'Application Support' / 'MahjongArena'))
+    store = ArenaStore(data_dir)
+    httpd = ArenaHTTPServer(('127.0.0.1', 0), store)
+    timer_stop = start_timer(store)
     port = httpd.server_address[1]
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -33,6 +38,8 @@ def main():
                           width=1280, height=860, min_size=(900, 650))
     webview.start()
     httpd.shutdown()
+    timer_stop.set()
+    httpd.server_close()
 
 
 if __name__ == '__main__':

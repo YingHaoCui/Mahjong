@@ -1,0 +1,31 @@
+FROM python:3.12-slim AS source
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ENV http_proxy=${HTTP_PROXY} https_proxy=${HTTPS_PROXY} no_proxy=${NO_PROXY}
+ARG GIT_REPO_URL
+ARG GIT_REF=main
+ARG CACHEBUST=1
+ARG BUILD_STRICT_SSL=true
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+# Private repositories: pass --secret id=git_token,env=GIT_TOKEN. Never bake a token into ARG/layers.
+RUN --mount=type=secret,id=git_token \
+    test -n "${GIT_REPO_URL}" && \
+    echo "cachebust=${CACHEBUST}" && \
+    git init /app && git -C /app remote add origin "${GIT_REPO_URL}" && \
+    if [ -f /run/secrets/git_token ]; then \
+      git_auth="Authorization: Basic $(printf 'x-access-token:%s' "$(cat /run/secrets/git_token)" | base64 | tr -d '\n')"; \
+    else git_auth=""; fi && \
+    git -C /app -c http.sslVerify="${BUILD_STRICT_SSL}" -c http.extraHeader="${git_auth}" fetch --depth 1 origin "${GIT_REF}" && \
+    git -C /app checkout --detach FETCH_HEAD && rm -rf /app/.git /app/arena-data
+
+FROM python:3.12-slim AS runtime
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOST=0.0.0.0 PORT=8080 ARENA_DATA_DIR=/data
+WORKDIR /app
+COPY --from=source /app /app
+RUN useradd --uid 10001 --create-home arena && mkdir -p /data && chown arena:arena /data
+USER arena
+VOLUME ["/data"]
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8080')+'/healthz',timeout=3)"
+CMD ["python", "webgame/server.py"]

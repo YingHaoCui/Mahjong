@@ -1,4 +1,7 @@
 __pycache__/
+arena-data/
+node_modules/
+tests/.runtime-*/
 *.pyc
 .DS_Store
 webgame/divergence_log.jsonl

@@ -1,0 +1,9 @@
+.git
+arena-data
+**/__pycache__
+**/*.pyc
+webgame/*_log.jsonl
+webgame/compare_*.jsonl
+webgame/oracle_*.jsonl
+testRecord
+Ini_Games

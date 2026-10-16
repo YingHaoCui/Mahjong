@@ -17,9 +17,8 @@ pyinstaller \
   --paths "$ROOT" \
   --paths "$ROOT/webgame" \
   --add-data "$ROOT/webgame/index.html:webgame" \
-  --add-data "$ROOT/webgame/style.css:webgame" \
-  --add-data "$ROOT/webgame/game.js:webgame" \
-  --add-data "$ROOT/webgame/transport_fetch.js:webgame" \
+  --add-data "$ROOT/webgame/arena.css:webgame" \
+  --add-data "$ROOT/webgame/arena.js:webgame" \
   --noconfirm \
   launcher.py
 

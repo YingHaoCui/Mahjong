@@ -1,5 +1,11 @@
 # Mahjong (ebony72/Mahjong)
 
+## Current server: multi-room arena (2026-10)
+
+`webgame/server.py` now serves the four-seat arena and stateless Streamable HTTP MCP at `/mcp`. Read `docs/arena.md` before editing its API, UI, persistence or deployment. `webgame/arena.py` is the authoritative multi-player adapter; `webgame/arena.js` and `arena.css` are the current UI. Each seat ID is a private Bearer credential. No original strategy is invoked for arena turns. Never expose live seeds, hidden hands, pending opponent responses or storage files. Keep MCP and browser actions on the same validation path. `Dockerfile.git` supports remote Git builds; production uses one process and a persistent `/data` volume.
+
+The human-vs-three-bots HTTP endpoints and broad static repository serving described below are **historical**, not current server behavior. `GameSession`, offline PWA sources and strategy scripts remain for research and regression checks. Do not reconnect them to arena turns. Run `python -m unittest discover -s tests -v`; optional full browser + official MCP SDK verification is `npm run test:web` (see arena docs).
+
 XueZhan (血战到底) Mahjong engine + baseline strategy from "Let's Play Mahjong!"
 (arXiv:1903.03294); the deficiency (dfncy) calculator implements arXiv:2108.06832.
 `docs/2026-07-theory-and-design.md` is the full technical note for the 2026-07

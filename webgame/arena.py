@@ -1,0 +1,447 @@
+"""Authoritative four-player arena. No model calls or built-in strategy moves.
+
+All public projections are built here; never serialize engine objects directly.
+Room methods run under ArenaStore.condition (one serialized mutation stream).
+"""
+import copy
+import hashlib
+import json
+import os
+from pathlib import Path
+import random
+import secrets
+import threading
+import time
+
+from game_core import Dealer, Player, Judger, Round, GameSession, _settlement
+from utils import xzscore
+
+RULES = {
+    'version': 'xuezhan-arena-v1',
+    'summary': '四川血战到底；108张条万筒，无字牌、无吃、无换三张。先定缺，缺色必须先打完。三人胡牌或牌墙耗尽结束。',
+    'suits': ['条', '万', '筒'],
+    'actions': '定缺、弃牌、碰、明杠、暗杠、加杠、胡、自摸、抢杠、过；可拒绝胡牌。',
+    'priority': '胡/抢杠先收集所有合法响应，按引擎顺序统一裁决，支持一炮多响；全部过后才询问碰/杠。',
+    'scoring': '平胡1分；自摸×2、抢杠×2、杠上花/炮×2、碰碰胡×2、七对×4、金钩钓×4、清一色×4，每根×2；天胡/地胡按原引擎固定32分。无额外封顶。',
+    'payments': '点炮者支付；自摸向尚未胡牌的对手收取。暗杠每个未胡对手付2，明杠点杠者付2，加杠每个未胡对手付1。',
+    'settlement': '保留原引擎查大叫、查花猪（16分）、退税、呼叫转移；胡牌顺序不是比赛排名。',
+    'visibility': '暗杠牌面公开（沿用本项目规则）；暗手和摸牌仅自己可见，胡牌时公开完整手牌。定缺同时提交，全部完成后公开。',
+    'competition': '累计净得分；每局循环换座，参与者身份不变。种子仅局后公开。超时托管的局标记 assisted。',
+}
+
+
+class ArenaError(Exception):
+    def __init__(self, code, message, status=400):
+        super().__init__(message)
+        self.code, self.status = code, status
+
+
+def require(condition, code, message, status=400):
+    if not condition:
+        raise ArenaError(code, message, status)
+
+
+def text_value(value, name, limit=80):
+    require(isinstance(value, str) and 0 < len(value.strip()) <= limit,
+            'invalid_arguments', f'{name} must be a nonempty string, max {limit}')
+    return value.strip()
+
+
+def integer(value, name, low, high):
+    require(type(value) is int and low <= value <= high,
+            'invalid_arguments', f'{name} must be an integer in [{low}, {high}]')
+    return value
+
+
+class ArenaGame:
+    def __init__(self, seed, number, now, timeout):
+        self.seed, self.number, self.timeout = seed, number, timeout
+        self.dealer = Dealer(random.Random(seed))
+        self.players = [Player(i) for i in range(4)]
+        self.judger = Judger()
+        self.round = Round(self.judger, self.dealer, 4)
+        for p in self.players:
+            self.dealer.deal_cards(p, 13)
+        self.dealer.deal_cards(self.players[0], 1)
+        self.stage = 'daque'
+        self.pending, self.responses = {}, {}
+        self.serial = 0
+        self.assisted = False
+        self.events = []
+        self.initial = {'hands': [copy.deepcopy(p.hand) for p in self.players],
+                        'wall': copy.deepcopy(self.dealer.deck)}
+        self.open_decisions(list(range(4)), 'daque', now)
+
+    def participant(self, seat):
+        return (seat + self.number - 1) % 4
+
+    def seat_for(self, participant):
+        return (participant - self.number + 1) % 4
+
+    def open_decisions(self, seats, phase, now):
+        self.serial += 1
+        self.phase = phase
+        self.pending, self.responses = {}, {}
+        for seat in seats:
+            if phase == 'daque':
+                options = [{'type': 'daque', 'color': c, '_engine': c} for c in range(3)]
+            else:
+                # Reuse the same exhaustive choices as the original human UI.
+                adapter = GameSession.__new__(GameSession)
+                adapter.players, adapter.dealer, adapter.round = self.players, self.dealer, self.round
+                adapter.human = seat
+                raw = adapter._human_pending(phase)
+                if raw['type'] == 'discard':
+                    unique = sorted(set(tuple(t) for t in raw['allowed']))
+                    options = [{'type': 'discard', 'tile': list(t), '_engine': list(t)} for t in unique]
+                else:
+                    options = []
+                    for o in raw['options']:
+                        a = o['action']
+                        kind = a[0] if isinstance(a, list) else a
+                        opt = {'type': 'pass' if kind == 'stand' else kind, '_engine': a}
+                        if 'tile' in o:
+                            opt['tile'] = o['tile']
+                        options.append(opt)
+            for i, option in enumerate(options):
+                option['actionId'] = f'a{i}'
+            self.pending[seat] = {'decisionId': f'g{self.number}-d{self.serial}-s{seat}',
+                                  'seat': seat, 'phase': phase, 'createdAt': now,
+                                  'deadline': now + self.timeout, 'options': options}
+
+    def decision(self, seat):
+        d = self.pending.get(seat)
+        if d is None or seat in self.responses:
+            return None
+        return {k: copy.deepcopy(v) for k, v in d.items() if k != 'options'} | {
+            'legalActions': [{k: copy.deepcopy(v) for k, v in o.items() if k != '_engine'}
+                             for o in d['options']]}
+
+    def apply(self, seat, decision_id, action_id, now, assisted=False):
+        d = self.pending.get(seat)
+        require(d is not None and d['decisionId'] == decision_id and seat not in self.responses,
+                'stale_decision', 'Decision is no longer pending', 409)
+        option = next((o for o in d['options'] if o['actionId'] == action_id), None)
+        require(option is not None, 'illegal_action', 'Choose an actionId from legalActions')
+        self.responses[seat] = copy.deepcopy(option)
+        self.assisted |= assisted
+        if len(self.responses) != len(self.pending):
+            return  # sealed responses: no public engine mutation before all replies
+        if self.phase == 'daque':
+            for s, o in self.responses.items():
+                self.players[s].daque_color = o['color']
+            self.dealer.dqc = [p.daque_color for p in self.players]
+            self.events.append({'type': 'daque', 'colors': list(self.dealer.dqc)})
+            self.stage = 'play'
+        else:
+            # Engine order, never arrival order. The engine already supports multi-hu.
+            for _ in range(len(self.responses)):
+                cur = self.round.current_player
+                o = self.responses[cur]
+                self.events.append({'type': o['type'], 'seat': cur,
+                                    **({'tile': o['tile']} if 'tile' in o else {})})
+                self.round.proceed_round(self.players, copy.deepcopy(o['_engine']))
+        self.pending, self.responses = {}, {}
+        self.advance(now)
+
+    def advance(self, now):
+        while not self.round.is_over and self.round.valid_act == 'self_check':
+            self.round.proceed_round(self.players, 'self_check')
+        if self.round.is_over or self.round.valid_act is None:
+            if not self.dealer.deck and len(self.round.winners) < 3:
+                xzscore.update_finalScore(self.dealer, self.players)
+            self.stage = 'over'
+            require(sum(p.myscore for p in self.players) == 0,
+                    'engine_error', 'Settlement is not zero sum', 500)
+            return
+        phase = self.round.valid_act
+        seats = ([p.player_id for p in self.round.Huers]
+                 if phase in ('hu', 'robkong') else [self.round.current_player])
+        self.open_decisions(seats, phase, now)
+
+    def view(self, participant=None, reveal=False):
+        own = self.seat_for(participant) if participant is not None else None
+        over = self.stage == 'over'
+        players = []
+        for s, p in enumerate(self.players):
+            visible = over or reveal or own == s or p.winning
+            item = {'seat': s, 'participant': self.participant(s), 'nHand': len(p.hand),
+                    'pile': copy.deepcopy(p.pile), 'daque': p.daque_color if self.stage != 'daque' else None,
+                    'score': p.myscore, 'winning': p.winning, 'huWay': list(p.hu_way),
+                    'discards': copy.deepcopy(self.dealer.discard_lists[s])}
+            if visible:
+                item['hand'] = sorted(copy.deepcopy(p.hand))
+            if over:
+                item['settlement'] = _settlement(p)
+            if own == s and self.stage == 'play' and len(p.hand) % 3 == 2 and not p.winning:
+                item['drawn'] = copy.deepcopy(p.hand[-1])
+            players.append(item)
+        result = {'number': self.number, 'stage': self.stage, 'wall': len(self.dealer.deck),
+                  'players': players, 'history': copy.deepcopy(self.dealer.act_history),
+                  'events': copy.deepcopy(self.events), 'assisted': self.assisted,
+                  # Eligibility for a sealed hu window is private information.
+                  'activeSeats': [] if self.phase in ('daque', 'hu', 'robkong', 'pong', 'kong') else list(self.pending),
+                  'waitingFor': ('settled' if over else 'daque' if self.stage == 'daque' else
+                                 'responses' if self.phase in ('hu', 'robkong', 'pong', 'kong') else 'turn'),
+                  'yourSeat': own,
+                  'decision': self.decision(own) if own is not None else None}
+        if over:
+            result['seed'] = str(self.seed)
+        return result
+
+
+class Room:
+    def __init__(self, config, room_id=None, owner=None, seats=None):
+        self.id = room_id or secrets.token_urlsafe(12)
+        self.owner = owner or secrets.token_urlsafe(32)
+        self.config = config
+        self.seats = seats or [{'seatId': secrets.token_urlsafe(32), 'name': f'玩家 {i+1}',
+                                'joined': False, 'kind': None} for i in range(4)]
+        self.created = time.time()
+        self.revision = 0
+        self.commands = []
+        self.requests = {}
+        self.games = []
+        self.game = None
+        self.status = 'waiting'
+        self.failure = None
+
+    def identity(self, token):
+        if token and secrets.compare_digest(token, self.owner):
+            return 'owner', None
+        for i, seat in enumerate(self.seats):
+            if token and secrets.compare_digest(token, seat['seatId']):
+                return 'seat', i
+        return 'public', None
+
+    def join(self, token, name, kind):
+        role, p = self.identity(token)
+        require(role == 'seat', 'unauthorized', 'Valid seat ID required', 401)
+        require(kind in ('human', 'ai'), 'invalid_arguments', 'kind must be human or ai')
+        self.seats[p].update(name=text_value(name, 'name'), kind=kind, joined=True)
+        self.revision += 1
+        return p
+
+    def command(self, command):
+        op = command['op']
+        now = command['at']
+        if op == 'start':
+            require(self.status in ('waiting', 'between_games'),
+                    'wrong_phase', 'Current game is still running', 409)
+            require(len(self.games) < self.config['games'], 'series_complete', 'Series is complete', 409)
+            require(all(s['joined'] for s in self.seats), 'seats_empty', 'All four seats must join', 409)
+            # Never reuse a revealed deal in a live series: entrants retain memory.
+            self.game = ArenaGame(command['seed'], len(self.games)+1, now, self.config['turnSeconds'])
+            self.games.append(self.game)
+            self.status = 'playing'
+        elif op == 'action':
+            require(self.status == 'playing', 'wrong_phase', 'Room is not playing', 409)
+            self.game.apply(self.game.seat_for(command['participant']), command['decisionId'],
+                            command['actionId'], now, command.get('assisted', False))
+            key = (command['participant'], command['requestId'])
+            self.requests[key] = {'decisionId': command['decisionId'], 'actionId': command['actionId']}
+            if self.game.stage == 'over':
+                self.status = 'complete' if len(self.games) == self.config['games'] else 'between_games'
+        elif op == 'forfeit':
+            self.status = 'forfeit'
+            self.failure = {'participant': command['participant'], 'reason': 'decision_timeout'}
+        elif op == 'stop':
+            require(self.status in ('waiting', 'playing', 'between_games'),
+                    'wrong_phase', 'Room is already terminal', 409)
+            self.status = 'stopped'
+        elif op == 'invalidate':
+            self.status = 'invalid'
+            self.failure = {'reason': 'engine_error'}
+        else:
+            raise ArenaError('invalid_arguments', 'Unknown command')
+        self.commands.append(copy.deepcopy(command))
+        self.revision += 1
+
+    def summary(self):
+        return {'roomId': self.id, 'name': self.config['name'], 'status': self.status,
+                'joined': sum(s['joined'] for s in self.seats), 'revision': self.revision,
+                'gameNumber': len(self.games), 'games': self.config['games']}
+
+    def view(self, token=None):
+        role, participant = self.identity(token)
+        leaderboard = []
+        for i, seat in enumerate(self.seats):
+            finished = [g for g in self.games if g.stage == 'over']
+            leaderboard.append({'participant': i, 'name': seat['name'], 'kind': seat['kind'],
+                                'joined': seat['joined'],
+                                'score': sum(g.players[g.seat_for(i)].myscore for g in finished),
+                                'games': len(finished),
+                                'assistedGames': sum(g.assisted for g in finished),
+                                'huGames': sum(g.players[g.seat_for(i)].winning for g in finished),
+                                'zimoGames': sum('zimo' in g.players[g.seat_for(i)].hu_way for g in finished),
+                                'timeouts': sum(c.get('assisted', False) and c.get('participant') == i
+                                                for c in self.commands)})
+        return self.summary() | {'config': self.config, 'role': role, 'participant': participant,
+                                 'seats': leaderboard, 'failure': self.failure,
+                                 'game': self.game.view(participant) if self.game else None,
+                                 'serverTime': time.time()}
+
+    def record(self):
+        return {'format': 1, 'roomId': self.id, 'owner': self.owner, 'config': self.config,
+                'seats': self.seats, 'created': self.created, 'revision': self.revision,
+                'commands': self.commands}
+
+    @classmethod
+    def restore(cls, record):
+        room = cls(record['config'], record['roomId'], record['owner'], record['seats'])
+        room.created = record['created']
+        for command in record['commands']:
+            room.command(command)
+        room.revision = record['revision']
+        return room
+
+
+class ArenaStore:
+    def __init__(self, data_dir=None):
+        self.condition = threading.Condition(threading.RLock())
+        self.rooms = {}
+        self.data_dir = Path(data_dir) if data_dir else None
+        if self.data_dir:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            for path in self.data_dir.glob('*.json'):
+                room = Room.restore(json.loads(path.read_text(encoding='utf-8')))
+                self.rooms[room.id] = room
+
+    def save(self, room):
+        if self.data_dir:
+            path = self.data_dir / f'{room.id}.json'
+            temp = path.with_suffix('.tmp')
+            with open(temp, 'w', encoding='utf-8') as f:
+                json.dump(room.record(), f, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp, path)
+        self.condition.notify_all()
+
+    def create(self, payload):
+        config = {'name': text_value(payload.get('name', '四川麻将竞技场'), 'name'),
+                  'games': integer(payload.get('games', 4), 'games', 1, 128),
+                  'turnSeconds': integer(payload.get('turnSeconds', 120), 'turnSeconds', 15, 600),
+                  'timeoutPolicy': payload.get('timeoutPolicy', 'forfeit')}
+        require(config['timeoutPolicy'] in ('forfeit', 'legal'), 'invalid_arguments', 'Invalid timeoutPolicy')
+        with self.condition:
+            require(len(self.rooms) < 1000, 'capacity', 'Room capacity reached', 503)
+            room = Room(config)
+            self.rooms[room.id] = room
+            try:
+                self.save(room)
+            except Exception:
+                del self.rooms[room.id]
+                raise
+            return room.view(room.owner) | {'ownerToken': room.owner,
+                'seatIds': [s['seatId'] for s in room.seats]}
+
+    def room(self, room_id):
+        require(isinstance(room_id, str) and room_id in self.rooms, 'room_not_found', 'Room not found', 404)
+        return self.rooms[room_id]
+
+    def seat_room(self, token):
+        require(isinstance(token, str) and bool(token), 'unauthorized', 'Seat ID required', 401)
+        for room in self.rooms.values():
+            role, p = room.identity(token)
+            if role == 'seat':
+                return room, p
+        raise ArenaError('unauthorized', 'Invalid seat ID', 401)
+
+    def join(self, token, name, kind):
+        with self.condition:
+            room, _ = self.seat_room(token)
+            old_seats, old_revision = copy.deepcopy(room.seats), room.revision
+            try:
+                room.join(token, name, kind)
+                self.save(room)
+            except Exception:
+                room.seats, room.revision = old_seats, old_revision
+                raise
+            return room.view(token)
+
+    def commit(self, room, command):
+        # Roll back partial engine mutations on any error, including storage failure.
+        record = copy.deepcopy(room.record())
+        command_done = False
+        try:
+            room.command(command)
+            command_done = True
+            self.save(room)
+        except Exception as error:
+            restored = Room.restore(record)
+            room.__dict__.clear()
+            room.__dict__.update(restored.__dict__)
+            if not command_done and (not isinstance(error, ArenaError) or error.code == 'engine_error'):
+                room.command({'op': 'invalidate', 'at': time.time()})
+                self.save(room)
+                raise ArenaError('engine_error', 'Game marked invalid after an engine error', 500) from error
+            raise
+
+    def submit(self, token, payload):
+        with self.condition:
+            room, p = self.seat_room(token)
+            request_id = text_value(payload.get('requestId'), 'requestId', 128)
+            decision_id = text_value(payload.get('decisionId'), 'decisionId', 128)
+            action_id = text_value(payload.get('actionId'), 'actionId', 32)
+            prior = room.requests.get((p, request_id))
+            if prior is not None:
+                require(prior == {'decisionId': decision_id, 'actionId': action_id},
+                        'request_conflict', 'requestId was used with a different action', 409)
+                return {'accepted': True, 'duplicate': True, 'state': room.view(token)}
+            self.expire_room(room, time.time())
+            self.commit(room, {'op': 'action', 'at': time.time(), 'participant': p,
+                               'requestId': request_id, 'decisionId': decision_id, 'actionId': action_id})
+            return {'accepted': True, 'duplicate': False, 'state': room.view(token)}
+
+    def expire_room(self, room, now):
+        if room.status != 'playing':
+            return
+        game = room.game
+        expired = [s for s, d in game.pending.items() if s not in game.responses and d['deadline'] <= now]
+        for seat in expired:
+            p = game.participant(seat)
+            if room.config['timeoutPolicy'] == 'forfeit':
+                self.commit(room, {'op': 'forfeit', 'at': now, 'participant': p})
+                return
+            d = game.pending[seat]
+            opt = next((o for o in d['options'] if o['type'] == 'pass'), d['options'][0])
+            self.commit(room, {'op': 'action', 'at': now, 'participant': p,
+                               'requestId': f'timeout:{d["decisionId"]}', 'decisionId': d['decisionId'],
+                               'actionId': opt['actionId'], 'assisted': True})
+
+    def wait(self, token, after_revision=None, timeout=25, decision_only=False):
+        end = time.monotonic() + min(max(timeout, 0), 25)
+        with self.condition:
+            while True:
+                room, p = self.seat_room(token)
+                self.expire_room(room, time.time())
+                view = room.view(token)
+                ready = room.game and room.status == 'playing' and room.game.decision(room.game.seat_for(p))
+                terminal = room.status in ('complete', 'forfeit', 'stopped', 'invalid')
+                changed = after_revision is None or room.revision != after_revision
+                if terminal or (bool(ready) if decision_only else changed):
+                    return {'status': 'ready' if ready else 'changed', 'state': view}
+                remaining = end - time.monotonic()
+                if remaining <= 0:
+                    return {'status': 'timeout', 'state': view}
+                self.condition.wait(min(remaining, 1))
+
+    def tick(self):
+        with self.condition:
+            for room in list(self.rooms.values()):
+                self.expire_room(room, time.time())
+
+    def replay(self, room, number):
+        integer(number, 'game', 1, len(room.games))
+        game = room.games[number-1]
+        require(game.stage == 'over', 'replay_unavailable', 'Full replay is available after settlement', 409)
+        commands = [c for c in room.commands if c['op'] == 'action' and c['decisionId'].startswith(f'g{number}-')]
+        replay = ArenaGame(game.seed, number, 0, game.timeout)
+        frames = [replay.view(reveal=True)]
+        for c in commands:
+            replay.apply(replay.seat_for(c['participant']), c['decisionId'], c['actionId'], c['at'], c.get('assisted', False))
+            frames.append(replay.view(reveal=True))
+        return {'rules': RULES, 'seed': str(game.seed), 'initial': game.initial,
+                'commands': commands, 'frames': frames,
+                'sha256': hashlib.sha256(json.dumps(commands, sort_keys=True).encode()).hexdigest()}
