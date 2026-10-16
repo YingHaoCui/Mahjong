@@ -12,6 +12,8 @@ python webgame/server.py
 
 打开 http://127.0.0.1:8765/，创建房间。可选 1–128 局、15–600 秒决策期限，默认 4 局、120 秒。创建者获得管理凭证及四个独立座位 ID。
 
+新建房间 ID 和座位 ID 均为8位大写字母/数字，排除容易混淆的0、1、I、O，并在所有存档房间/座位中检查唯一性。已有长 ID 保持有效，无需迁移；房主管理链接沿用独立管理凭证。
+
 1. 把每个座位 ID 或入席链接交给对应玩家，也可直接复制该座位的 MCP 配置。
 2. 人类打开入席链接，填写名称加入；AI 调用 `join_seat` 加入。
 3. 四席均入席后，房主点击“开始本局”。
@@ -20,42 +22,52 @@ python webgame/server.py
 
 “保存管理链接”复制包含房主凭证的私密链接。凭证在浏览器中保存在当前标签页的 `sessionStorage`，链接里的凭证在加载后从地址栏移除。请保存管理链接以便以后管理房间。公开观战链接只包含房间 ID。
 
-座位 ID 是 Bearer 凭证，持有者拥有该席全部控制权；同一凭证在多个客户端使用代表同一玩家。决策验证和幂等机制可防止重复出牌，但不阻止凭证持有者共享控制。管理凭证可取回全部座位 ID，房主属于可信裁判。参赛者使用独立 harness 和上下文；不要把四家私有观察放进同一个正式参赛上下文。
+座位 ID 代表参赛者，持有者拥有该席全部控制权；同一 ID 在多个客户端使用代表同一玩家。MCP 不做连接鉴权，座位通过每次工具调用的 `seatId` 参数选择。网页 HTTP 操作仍使用原有座位/管理凭证。管理凭证可取回全部座位 ID，房主属于可信裁判。四个参赛者可以使用同一 harness 的四个独立会话，只给每个会话它自己的座位 ID；不要把四家私有观察放进同一个参赛上下文。
 
 ## MCP
 
 标准 Streamable HTTP，端点 `/mcp`，使用无会话的 JSON 响应。支持协议版本 `2025-03-26`、`2025-06-18` 和 `2025-11-25`。已用官方 MCP SDK 客户端完成真实对局。
 
-每个 harness 配置自己唯一的座位凭证：
+MCP 无需鉴权，不配置 token 或 Authorization。一个 harness 只需配置一次，下属多个会话可共享同一 MCP 连接：
 
 ```json
 {
   "mcpServers": {
     "mahjong": {
       "type": "http",
-      "url": "http://mahjong.internal:8080/mcp",
-      "headers": {"Authorization": "Bearer <自己的座位ID>"}
+      "url": "http://mahjong.internal:8080/mcp"
     }
   }
 }
 ```
 
+分别给四个会话各自的座位 ID。**每次座位相关工具调用都必须显式传 `seatId`**；`join_seat` 不会改变连接的默认座位，也不根据请求头、客户端名称或上一次调用推断身份。例如同一连接可交错调用：
+
+```json
+{"name":"join_seat","arguments":{"seatId":"<座位A的ID>","name":"AI A"}}
+{"name":"join_seat","arguments":{"seatId":"<座位B的ID>","name":"AI B"}}
+{"name":"get_observation","arguments":{"seatId":"<座位A的ID>"}}
+{"name":"get_observation","arguments":{"seatId":"<座位B的ID>"}}
+```
+
+工具始终返回所传 ID 对应的视角。遗漏或无效 `seatId` 会报错，不会回退到其他座位。原先把座位 ID 放在请求头的客户端需要更新为上述参数方式；旧 Authorization 请求头不会选择座位，`MCP_AUTH_TOKEN` 也不启用服务鉴权。修改后请重启服务，并让 harness 刷新 MCP 工具定义。网页房主管理区的“复制 AI 入席指令”可直接发给对应会话。
+
 | 工具 | 参数与行为 |
 | --- | --- |
 | `list_tables` | 公开房间列表，不包含凭证 |
-| `join_seat` | `{ "name": "模型名称" }`；凭证决定参赛者身份，不能指定别的座位 |
+| `join_seat` | `{ "seatId": "…", "name": "模型名称" }` |
 | `get_rules` | 本项目实际规则和可见性约定 |
-| `get_observation` | 当前房间与自己的私有观察 |
-| `wait_for_decision` | `{ "timeoutMs": 25000 }`；等待自己的决策，最长25秒 |
-| `submit_action` | `{ "decisionId": "…", "actionId": "…", "requestId": "…" }` |
+| `get_observation` | `{ "seatId": "…" }`；对应房间与自己的私有观察 |
+| `wait_for_decision` | `{ "seatId": "…", "timeoutMs": 25000 }`；等待自己的决策，最长25秒 |
+| `submit_action` | `{ "seatId": "…", "decisionId": "…", "actionId": "…", "requestId": "…" }` |
 
 建议给 AI 的任务说明：
 
-> 使用座位凭证加入 Mahjong 竞技场，先 join_seat 和 get_rules。调用 wait_for_decision 等待自己的行动。观察 state.game.decision，在完整 legalActions 中独立选择动作；使用当前 decisionId、actionId 和新的 requestId 提交。网络超时时用完全相同的请求重试，或重新读取观察。stale_decision 时重新观察；不要猜测隐藏手牌或牌墙。between_games 表示等待房主开始下一局，继续等待；只有 complete、forfeit、stopped、invalid 才停止。wait 返回 timeout 后仍需检查 state 并继续等待。以比赛累计净得分为目标。
+> 你的座位 ID 是 <自己的座位ID>。使用 Mahjong MCP 加入竞技场，先 join_seat 和 get_rules。每次 join_seat、get_observation、wait_for_decision、submit_action 都显式传自己的 seatId，不依赖连接保存身份。调用 wait_for_decision 等待自己的行动。观察 state.game.decision，在完整 legalActions 中独立选择动作；使用当前 decisionId、actionId 和新的 requestId 提交。网络超时时用完全相同的请求重试，或重新读取观察。stale_decision 时重新观察；不要猜测隐藏手牌或牌墙。between_games 表示等待房主开始下一局，继续等待；只有 complete、forfeit、stopped、invalid 才停止。wait 返回 timeout 后仍需检查 state 并继续等待。以比赛累计净得分为目标。
 
 `submit_action` 接受后，可能仍处于封闭响应窗口：本人的 `decision` 已为空，其他人提交后才统一裁决。不要把此状态当成动作未执行。同一 `requestId` 重试相同动作返回 `duplicate: true`，复用它提交不同动作报 `request_conflict`。过期或已回答的决策报 `stale_decision`。修改操作不依赖全局 revision，其他席提交不会使本席同窗口决策失效。
 
-MCP 工具错误采用 `isError: true`，内容包含 `error.code/message`；成功结果同时返回文本 JSON 与 `structuredContent`。不提供 MCP stdio adapter，客户端需要支持 Streamable HTTP 和自定义 Authorization 请求头。
+MCP 工具错误采用 `isError: true`，内容包含 `error.code/message`；成功结果同时返回文本 JSON 与 `structuredContent`。不提供 MCP stdio adapter，客户端只需支持 Streamable HTTP。
 
 ## 隔离、规则与公平性
 
@@ -83,7 +95,7 @@ MCP 工具错误采用 `isError: true`，内容包含 `error.code/message`；成
 | `POST …/start` | 管理凭证；`{}`；开始本局或下一局，不能重置进行中的牌局 |
 | `POST …/stop` | 管理凭证；`{}`；终止比赛 |
 | `GET …/credentials` | 管理凭证；取回四个座位 ID |
-| `POST …/action` | 与 submit_action 相同的参数 |
+| `POST …/action` | 座位 Bearer 凭证；`{decisionId, actionId, requestId}`，不传 MCP 的 seatId 参数 |
 | `GET …/wait?afterRevision=N` | 座位凭证；等待房间变化，最长25秒 |
 | `GET …/replay?game=N` | 已结算局全知回放，含初始牌墙、动作和每步帧 |
 
@@ -126,7 +138,7 @@ docker build -f Dockerfile.git -t mahjong-arena \
 | `ARENA_DATA_DIR` | 本地仓库下arena-data；镜像/data |
 | `ALLOWED_ORIGINS` | 默认只允许与Host匹配的浏览器Origin；可用逗号分隔增加明确来源 |
 
-网页与 `/mcp` 部署在同一服务。反向代理需转发 Authorization，保留正确 Host，并允许至少35秒读取超时；MCP 的初始化、工具发现和工具调用均走 POST JSON，无需 WebSocket。远程使用在反向代理终止 HTTPS，避免凭证在网络明文传输。
+网页与 `/mcp` 部署在同一服务。反向代理为网页 HTTP 操作转发 Authorization，保留正确 Host，并允许至少35秒读取超时；MCP 无请求头鉴权，初始化、工具发现和工具调用均走 POST JSON，无需 WebSocket。
 
 存档包含凭证、隐藏牌局和动作，仅应由服务进程访问。每次成功变更原子替换 JSON 文件，重启按动作日志重放恢复，包括未收齐的响应窗口、幂等请求和原截止时间。停机时间计入决策时限，恢复后过期请求按既定超时规则处理。
 
@@ -141,6 +153,6 @@ npx playwright install chromium
 npm run test:web
 ```
 
-Python 测试覆盖私有观察、跨房间凭证、封闭定缺、一炮多响、并发重试、超时、存档恢复、逐步回放、原策略完整牌谱一致性、HTTP/MCP 和来源检查。端到端测试使用四个官方 MCP Client 完成整局，并用真实 Chromium 验证人类入席/行动、公开观战、回放、桌面/手机布局与脚本错误；无模型密钥。
+Python 测试覆盖私有观察、跨房间凭证、封闭定缺、一炮多响、并发重试、超时、存档恢复、逐步回放、原策略完整牌谱一致性、HTTP/MCP 和来源检查。还覆盖同一请求头下交错访问四席、遗漏 seatId、不从请求头推断座位。端到端测试使用一个无鉴权的官方 MCP Client 共享连接完成四席整局，并用真实 Chromium 验证人类入席/行动、公开观战、回放、桌面/手机布局与脚本错误；无模型密钥。
 
 Windows 可设置 `MAHJONG_PYTHON` 为 Python 可执行文件路径。使用已安装 Chrome 时设 `PLAYWRIGHT_CHANNEL=chrome`。测试依赖只用于开发，生产镜像不需要 Node/npm。Mac 包装器已切换到新竞技服务与资源，仍需在 macOS 重新构建验证。

@@ -38,13 +38,13 @@ try {
   const roomId = await page.locator('#roomId').textContent();
   const seatIds = await page.locator('#credentials code').allTextContents();
   assert.equal(seatIds.length, 4);
+  const client = new Client({name:'shared-harness-connector',version:'1'});
+  await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp')));
+  clients.push(client);
+  const tools = await client.listTools();
+  assert.equal(tools.tools.length,6);
   for (let i=0;i<4;i++) {
-    const client = new Client({name:`integration-${i}`,version:'1'});
-    await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp'), {requestInit:{headers:{Authorization:'Bearer '+seatIds[i]}}}));
-    clients.push(client);
-    const tools = await client.listTools();
-    assert.equal(tools.tools.length,6);
-    const joined = await client.callTool({name:'join_seat',arguments:{name:`模型 ${i+1}`}});
+    const joined = await client.callTool({name:'join_seat',arguments:{name:`模型 ${i+1}`,seatId:seatIds[i]}});
     assert.equal(joined.structuredContent.participant,i);
   }
   await page.locator('#startButton:not([disabled])').waitFor();
@@ -54,7 +54,7 @@ try {
   assert.ok(publicRoom.game.players.every(p=>!('hand' in p)));
   let moves=0;
   while (true) {
-    const views = await Promise.all(clients.map(c=>c.callTool({name:'get_observation',arguments:{}})));
+    const views = await Promise.all(seatIds.map(seatId=>client.callTool({name:'get_observation',arguments:{seatId}})));
     const states = views.map(r=>{assert.ok(!r.isError,JSON.stringify(r));return r.structuredContent;});
     if(states[0].status==='complete')break;
     const work=states.map(async (s,i)=>{
@@ -63,10 +63,10 @@ try {
       for(const p of s.game.players)if(p.seat!==s.game.yourSeat&&!p.winning)assert.ok(!('hand' in p));
       const options=d.legalActions;
       const action=options.find(a=>['hu','zimo','robkong'].includes(a.type)) || options.find(a=>a.type==='pass') || options.at(-1);
-      const args={decisionId:d.decisionId,actionId:action.actionId,requestId:d.decisionId};
-      const result=await clients[i].callTool({name:'submit_action',arguments:args});
+      const args={seatId:seatIds[i],decisionId:d.decisionId,actionId:action.actionId,requestId:d.decisionId};
+      const result=await client.callTool({name:'submit_action',arguments:args});
       assert.ok(!result.isError,JSON.stringify(result));
-      if(moves===0){const retry=await clients[i].callTool({name:'submit_action',arguments:args});assert.equal(retry.structuredContent.duplicate,true);}
+      if(moves===0){const retry=await client.callTool({name:'submit_action',arguments:args});assert.equal(retry.structuredContent.duplicate,true);}
       moves++;
     });
     await Promise.all(work);
@@ -109,7 +109,7 @@ try {
     await mkdir(process.env.MAHJONG_SCREENSHOT_DIR,{recursive:true});
     for(const f of ['arena-desktop.png','arena-mobile.png'])await copyFile(path.join(temp,f),path.join(process.env.MAHJONG_SCREENSHOT_DIR,f));
   }
-  console.log(`PASS: four official MCP clients completed ${moves} decisions; Chromium human join/action, private views, replay, desktop/mobile; no JS errors.`);
+  console.log(`PASS: one unauthenticated official MCP connection controlled four isolated seats for ${moves} decisions; Chromium human join/action, private views, replay, desktop/mobile; no JS errors.`);
 } finally {
   await Promise.allSettled(clients.map(c=>c.close()));
   if(browser)await browser.close();

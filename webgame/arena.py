@@ -16,6 +16,17 @@ import time
 from game_core import Dealer, Player, Judger, Round, GameSession, _settlement
 from utils import xzscore
 
+ID_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
+
+
+def short_id(allocated):
+    """Eight readable characters; retry collisions across all stored rooms/seats."""
+    while True:
+        value = ''.join(secrets.choice(ID_ALPHABET) for _ in range(8))
+        if value not in allocated:
+            allocated.add(value)
+            return value
+
 RULES = {
     'version': 'xuezhan-arena-v1',
     'summary': '四川血战到底；108张条万筒，无字牌、无吃、无换三张。先定缺，缺色必须先打完。三人胡牌或牌墙耗尽结束。',
@@ -191,11 +202,13 @@ class ArenaGame:
 
 
 class Room:
-    def __init__(self, config, room_id=None, owner=None, seats=None):
-        self.id = room_id or secrets.token_urlsafe(12)
+    def __init__(self, config, room_id=None, owner=None, seats=None, reserved_ids=None):
+        allocated = set(reserved_ids or ())
+        self.id = room_id or short_id(allocated)
+        allocated.add(self.id)
         self.owner = owner or secrets.token_urlsafe(32)
         self.config = config
-        self.seats = seats or [{'seatId': secrets.token_urlsafe(32), 'name': f'玩家 {i+1}',
+        self.seats = seats or [{'seatId': short_id(allocated), 'name': f'玩家 {i+1}',
                                 'joined': False, 'kind': None} for i in range(4)]
         self.created = time.time()
         self.revision = 0
@@ -326,7 +339,9 @@ class ArenaStore:
         require(config['timeoutPolicy'] in ('forfeit', 'legal'), 'invalid_arguments', 'Invalid timeoutPolicy')
         with self.condition:
             require(len(self.rooms) < 1000, 'capacity', 'Room capacity reached', 503)
-            room = Room(config)
+            allocated = set(self.rooms)
+            allocated.update(s['seatId'] for r in self.rooms.values() for s in r.seats)
+            room = Room(config, reserved_ids=allocated)
             self.rooms[room.id] = room
             try:
                 self.save(room)

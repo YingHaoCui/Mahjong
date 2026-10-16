@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'webgame'))
-from arena import ArenaStore, ArenaGame, ArenaError, Room
+from arena import ArenaStore, ArenaGame, ArenaError, Room, short_id
 from game_core import GameSession
 from server import ArenaHTTPServer
 
@@ -48,6 +48,26 @@ def finish(store, room, data):
 
 
 class ArenaTests(unittest.TestCase):
+    def test_short_ids_unique_and_legacy_records_preserved(self):
+        store=ArenaStore()
+        allocated=set()
+        for _ in range(30):
+            data=store.create({})
+            for value in [data['roomId']]+data['seatIds']:
+                self.assertRegex(value,r'^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$')
+                self.assertNotIn(value,allocated)
+                allocated.add(value)
+        # Force a collision and verify generation retries rather than reusing it.
+        used={'AAAAAAAA'}
+        with patch('arena.secrets.choice',side_effect=list('AAAAAAAA'+'BBBBBBBB')):
+            self.assertEqual(short_id(used),'BBBBBBBB')
+        record=store.room(data['roomId']).record()
+        record['roomId']='legacy-room-id-1234'
+        record['seats'][0]['seatId']='legacy-long-seat-id-kept-for-existing-clients'
+        restored=Room.restore(record)
+        self.assertEqual(restored.id,record['roomId'])
+        self.assertEqual(restored.identity(record['seats'][0]['seatId']),('seat',0))
+
     def test_secrets_and_room_isolation(self):
         store, room, data = prepared()
         _, other, other_data = prepared(store, seed=43)
@@ -271,16 +291,16 @@ class HTTPTests(unittest.TestCase):
         init=self.request('/mcp',{'jsonrpc':'2.0','id':1,'method':'initialize','params':{'protocolVersion':'2025-06-18','capabilities':{},'clientInfo':{'name':'test','version':'1'}}})[1]
         self.assertEqual(init['result']['protocolVersion'],'2025-06-18')
         for i,token in enumerate(tokens):
-            result=self.mcp('join_seat',{'name':f'Bot{i}'},token)
+            result=self.mcp('join_seat',{'name':f'Bot{i}','seatId':token})
             self.assertEqual(result['structuredContent']['participant'],i)
         self.request(f'/api/rooms/{rid}/start',{},data['ownerToken'])
-        obs=self.mcp('get_observation',token=tokens[0])['structuredContent']
+        obs=self.mcp('get_observation',{'seatId':tokens[0]})['structuredContent']
         self.assertEqual(obs['game']['decision']['phase'],'daque')
         d=obs['game']['decision']
-        self.assertFalse(self.mcp('submit_action',{'decisionId':d['decisionId'],'actionId':'a0','requestId':'http'},tokens[0]).get('isError',False))
-        self.assertTrue(self.mcp('get_observation',token='bad')['isError'])
-        self.assertTrue(self.mcp('submit_action',{'decisionId':'x','actionId':'x','requestId':True},tokens[0])['isError'])
-        self.assertTrue(self.mcp('get_observation',{'seat':1},tokens[0])['isError'])
+        self.assertFalse(self.mcp('submit_action',{'seatId':tokens[0],'decisionId':d['decisionId'],'actionId':'a0','requestId':'http'}).get('isError',False))
+        self.assertTrue(self.mcp('get_observation',{'seatId':'bad'})['isError'])
+        self.assertTrue(self.mcp('submit_action',{'seatId':tokens[0],'decisionId':'x','actionId':'x','requestId':True})['isError'])
+        self.assertTrue(self.mcp('get_observation',{'seatId':tokens[0],'seat':1})['isError'])
         with self.assertRaises(HTTPError) as error:
             self.request(f'/api/rooms/{rid}/credentials',token=tokens[0])
         self.assertEqual(error.exception.code,403)
@@ -293,6 +313,47 @@ class HTTPTests(unittest.TestCase):
             self.request('/api/rooms',headers={'Origin':'https://evil.test'})
         self.assertEqual(e.exception.code,403)
         self.assertEqual(self.request('/healthz')[0],200)
+
+    def test_shared_harness_no_auth_explicit_seats(self):
+        _,data=self.request('/api/rooms',{'games':1})
+        shared='one-platform-token'
+        with patch.dict('os.environ',{'MCP_AUTH_TOKEN':shared}):
+            # MCP ignores Authorization entirely, including an old env setting.
+            self.assertIn('version',self.mcp('get_rules')['structuredContent'])
+            self.assertIn('version',self.mcp('get_rules',token='wrong')['structuredContent'])
+            for i,seat in enumerate(data['seatIds']):
+                r=self.mcp('join_seat',{'name':f'Chat {i}','seatId':seat})
+                self.assertEqual(r['structuredContent']['participant'],i)
+            self.request(f'/api/rooms/{data["roomId"]}/start',{},data['ownerToken'])
+            # Same header/client: alternating calls must not follow the last join.
+            for i in (0,3,1,2,0):
+                r=self.mcp('get_observation',{'seatId':data['seatIds'][i]})
+                s=r['structuredContent']
+                self.assertEqual(s['participant'],i)
+                self.assertEqual(['hand' in p for p in s['game']['players']],[p==i for p in range(4)])
+                self.assertNotIn(data['seatIds'][i],json.dumps(s))
+            missing=self.mcp('get_observation',token=shared)
+            self.assertEqual(missing['structuredContent']['error']['code'],'invalid_arguments')
+            invalid=self.mcp('get_observation',{'seatId':'not-a-seat'},shared)
+            self.assertTrue(invalid['isError'])
+            d=self.mcp('wait_for_decision',{'seatId':data['seatIds'][1],'timeoutMs':0},shared)['structuredContent']['state']['game']['decision']
+            args={'seatId':data['seatIds'][1],'decisionId':d['decisionId'],'actionId':'a0','requestId':'shared'}
+            self.assertTrue(self.mcp('submit_action',args,shared)['structuredContent']['accepted'])
+            self.assertTrue(self.mcp('submit_action',args,shared)['structuredContent']['duplicate'])
+            self.assertIsNone(self.mcp('get_observation',{'seatId':data['seatIds'][1]},shared)['structuredContent']['game']['decision'])
+            self.assertIsNotNone(self.mcp('get_observation',{'seatId':data['seatIds'][0]},shared)['structuredContent']['game']['decision'])
+
+    def test_explicit_seat_required_headers_do_not_select_seat(self):
+        _,data=self.request('/api/rooms',{})
+        r=self.mcp('join_seat',{'seatId':data['seatIds'][2],'name':'Shared connector'})
+        self.assertEqual(r['structuredContent']['participant'],2)
+        r=self.mcp('get_observation',{'seatId':'invalid'},data['seatIds'][2])
+        self.assertTrue(r['isError'])
+        r=self.mcp('get_observation',token=data['seatIds'][2])
+        self.assertTrue(r['isError'])
+        for name in ('join_seat','get_observation','wait_for_decision','submit_action'):
+            r=self.mcp(name,token=data['seatIds'][2])
+            self.assertEqual(r['structuredContent']['error']['code'],'invalid_arguments')
 
 
 if __name__=='__main__':

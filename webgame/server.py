@@ -28,16 +28,18 @@ def schema(properties=None, required=None):
 
 
 STRING = {'type': 'string', 'minLength': 1, 'maxLength': 128}
+SEAT = {'type': 'string', 'minLength': 1, 'maxLength': 128,
+        'description': 'Your seat ID. Supply on EVERY seat-related tool call. Never use a numeric seat index. The MCP connection has no authentication or persistent seat binding.'}
 TOOLS = [
     {'name': 'list_tables', 'description': 'List public rooms; never lists seat IDs.', 'inputSchema': schema()},
-    {'name': 'join_seat', 'description': 'Join your seat using its unique seat ID as Authorization Bearer. Cannot select another seat.',
-     'inputSchema': schema({'name': {'type': 'string', 'minLength': 1, 'maxLength': 80}}, ['name'])},
+    {'name': 'join_seat', 'description': 'Join with seatId. Joining does NOT bind the shared connection; keep passing seatId on every seat-related tool call. No Authorization header is needed.',
+     'inputSchema': schema({'name': {'type': 'string', 'minLength': 1, 'maxLength': 80}, 'seatId': SEAT}, ['name', 'seatId'])},
     {'name': 'get_rules', 'description': 'Actual rules, scoring and visibility.', 'inputSchema': schema()},
-    {'name': 'get_observation', 'description': 'Your private hand, public table and exhaustive legalActions. No hidden opponent hands or live seed.', 'inputSchema': schema()},
+    {'name': 'get_observation', 'description': 'Your private hand, public table and exhaustive legalActions. Pass your seatId on each call. No hidden opponent hands or live seed.', 'inputSchema': schema({'seatId': SEAT}, ['seatId'])},
     {'name': 'wait_for_decision', 'description': 'Wait for your decision or game end. Inspect state even on timeout. Max 25 seconds.',
-     'inputSchema': schema({'timeoutMs': {'type': 'integer', 'minimum': 0, 'maximum': 25000}})},
+     'inputSchema': schema({'seatId': SEAT, 'timeoutMs': {'type': 'integer', 'minimum': 0, 'maximum': 25000}}, ['seatId'])},
     {'name': 'submit_action', 'description': 'Submit a legal actionId for decisionId. Reuse requestId only to retry the identical action.',
-     'inputSchema': schema({'decisionId': STRING, 'actionId': STRING, 'requestId': STRING}, ['decisionId', 'actionId', 'requestId'])},
+     'inputSchema': schema({'seatId': SEAT, 'decisionId': STRING, 'actionId': STRING, 'requestId': STRING}, ['seatId', 'decisionId', 'actionId', 'requestId'])},
 ]
 
 
@@ -55,7 +57,7 @@ def validate_arguments(tool, args):
                     'invalid_arguments', f'Invalid {k}')
 
 
-def call_tool(store, token, name, args):
+def call_tool(store, name, args):
     tool = next((t for t in TOOLS if t['name'] == name), None)
     require(tool is not None, 'unknown_tool', 'Unknown MCP tool')
     validate_arguments(tool, args)
@@ -64,6 +66,9 @@ def call_tool(store, token, name, args):
     if name == 'list_tables':
         with store.condition:
             return {'rooms': [r.summary() for r in store.rooms.values()]}
+    # Routing belongs to each call, never to the shared connection or headers.
+    args = dict(args)
+    token = args.pop('seatId')
     if name == 'submit_action':
         return store.submit(token, args)
     if name == 'wait_for_decision':
@@ -246,14 +251,14 @@ class Handler(BaseHTTPRequestHandler):
             requested = params.get('protocolVersion')
             result = {'protocolVersion': requested if requested in PROTOCOLS else PROTOCOLS[0],
                       'capabilities': {'tools': {}}, 'serverInfo': {'name': 'mahjong-arena', 'version': '1.0.0'},
-                      'instructions': 'Use your seat ID as Bearer credential. join_seat, get_rules, wait_for_decision; submit legalActions with unique requestId. Stop at terminal room status.'}
+                      'instructions': 'No MCP authentication is required. A connector may be shared across harness chats. Pass your seatId in EVERY join_seat, get_observation, wait_for_decision and submit_action call; join does not bind the connection and Authorization headers do not select a seat. Use legalActions and unique requestId. Stop at complete, forfeit, stopped or invalid.'}
         elif method == 'ping':
             result = {}
         elif method == 'tools/list':
             result = {'tools': TOOLS}
         elif method == 'tools/call':
             try:
-                data = call_tool(self.store, self.token(), params.get('name'), params.get('arguments', {}))
+                data = call_tool(self.store, params.get('name'), params.get('arguments', {}))
                 result = {'content': [{'type': 'text', 'text': json.dumps(data, ensure_ascii=False)}], 'structuredContent': data}
             except ArenaError as e:
                 data = {'ok': False, 'error': {'code': e.code, 'message': str(e)}}
