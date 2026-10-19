@@ -1,0 +1,391 @@
+{
+  "repository": "https://github.com/hjj2017/whmj.cocos2d_client",
+  "revision": "7a1bc252edcd94b13ad8b41d210a5552d9cceed1",
+  "license": "Apache-2.0 (upstream repository LICENSE)",
+  "files": [
+    {
+      "file": "ChuPai.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/ChuPai.mp3",
+      "bytes": 2880,
+      "sha256": "590e0fecb98c9cf4f1950f84c75adbe1ea7af512a82a29aa0e658d07fa990d94"
+    },
+    {
+      "file": "sex_0_/MahjongVal_21_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_21_.mp3",
+      "bytes": 10347,
+      "sha256": "088ca21841c62aad07141b82e41c5f39881547996904e89b5bdf13bc22a2e2c6"
+    },
+    {
+      "file": "sex_0_/MahjongVal_22_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_22_.mp3",
+      "bytes": 10347,
+      "sha256": "3e4d33407a1d05b3bf2e565faef7415a1f9f40bf4c6715abf5ebdc577588ab77"
+    },
+    {
+      "file": "sex_0_/MahjongVal_23_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_23_.mp3",
+      "bytes": 11601,
+      "sha256": "14ea3eb45c6317c3e74577fc3d52c497ba052a1c3cf989d2d71a2fe7fc1a50fb"
+    },
+    {
+      "file": "sex_0_/MahjongVal_24_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_24_.mp3",
+      "bytes": 11601,
+      "sha256": "c3b849224094c387629e1ee6ad6e2980d32c8b0218e74cd27a91487d8eb09eab"
+    },
+    {
+      "file": "sex_0_/MahjongVal_25_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_25_.mp3",
+      "bytes": 10765,
+      "sha256": "7b6ad73ed229fc9c0cdecb3dcb64e40dd266cb9b040c557139a009f165b97640"
+    },
+    {
+      "file": "sex_0_/MahjongVal_26_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_26_.mp3",
+      "bytes": 11183,
+      "sha256": "f47fde697a1bbf3dc9823fafd9f3ca63800f88792d0f40960a0fd047f6685603"
+    },
+    {
+      "file": "sex_0_/MahjongVal_27_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_27_.mp3",
+      "bytes": 11183,
+      "sha256": "395f04f3bdff17b22a6ab2f1add3b8782e19199011ca3077d2b55dab96af2f10"
+    },
+    {
+      "file": "sex_0_/MahjongVal_28_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_28_.mp3",
+      "bytes": 9093,
+      "sha256": "aad44dc1aa18596b8ef15a1f1a3f2b60e39113866ddd0869c444a064cc8f684a"
+    },
+    {
+      "file": "sex_0_/MahjongVal_29_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_29_.mp3",
+      "bytes": 11601,
+      "sha256": "8b626578c4b4f18a3cc2abcd77b3168ce5eb26db1f207d87b12065480dd309d1"
+    },
+    {
+      "file": "sex_0_/MahjongVal_41_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_41_.mp3",
+      "bytes": 12437,
+      "sha256": "b3ce4949018ceb081698be647658ae52b3f80c0eb8bf26e5a2026da11876d648"
+    },
+    {
+      "file": "sex_0_/MahjongVal_42_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_42_.mp3",
+      "bytes": 12855,
+      "sha256": "a8815cbdf611dc09af4924f534653f5deba0e113584f604b633d862c76572a10"
+    },
+    {
+      "file": "sex_0_/MahjongVal_43_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_43_.mp3",
+      "bytes": 14945,
+      "sha256": "42ef5c43ea54844ebaf364abd911005f1815a8f0abcefe01ab6064307ec01139"
+    },
+    {
+      "file": "sex_0_/MahjongVal_44_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_44_.mp3",
+      "bytes": 14945,
+      "sha256": "7c06055ac676d8936270c32008b98bcfe6fd2248b346795ccac0b59874a523ed"
+    },
+    {
+      "file": "sex_0_/MahjongVal_45_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_45_.mp3",
+      "bytes": 14109,
+      "sha256": "fca9cb2354950d0da187f9ccb0150902e270cd9d073b307063d0d962f75eeba7"
+    },
+    {
+      "file": "sex_0_/MahjongVal_46_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_46_.mp3",
+      "bytes": 13691,
+      "sha256": "25edb0388d5fc1825354dcdbe899b309556923fffa2db2b6d9e4317193bb44b2"
+    },
+    {
+      "file": "sex_0_/MahjongVal_47_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_47_.mp3",
+      "bytes": 12855,
+      "sha256": "e6cb7c0fc5b2e7ad2a0afbe5583157f8469765a0040746a0c2083fe91604b096"
+    },
+    {
+      "file": "sex_0_/MahjongVal_48_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_48_.mp3",
+      "bytes": 13691,
+      "sha256": "aa91925b99322859de293ba9c8f5b7dd18c0a478251510d8fd9f57beaf12c04a"
+    },
+    {
+      "file": "sex_0_/MahjongVal_49_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_49_.mp3",
+      "bytes": 14527,
+      "sha256": "4bfc58f9ad2be6f8f7af32f31eb70a5236e07176c4c450da8ac65d74fce65256"
+    },
+    {
+      "file": "sex_0_/MahjongVal_81_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_81_.mp3",
+      "bytes": 11183,
+      "sha256": "dfd223a5672c6ad531a4d6be0b7c1c3a33790964d2be7f172df52b7927092730"
+    },
+    {
+      "file": "sex_0_/MahjongVal_82_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_82_.mp3",
+      "bytes": 11601,
+      "sha256": "56da8dd1772f5555f2f295c0ac5844bf836fbe74e10c9d5d2580c63aeff97cba"
+    },
+    {
+      "file": "sex_0_/MahjongVal_83_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_83_.mp3",
+      "bytes": 15363,
+      "sha256": "c43c16465411368b9c20e2000833706fd0db3c73690a1f9153f1f4112a9e7486"
+    },
+    {
+      "file": "sex_0_/MahjongVal_84_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_84_.mp3",
+      "bytes": 14527,
+      "sha256": "4176520f7f21544315c4a77d93602be1d1535209ce9c148af7fd04c1da44f752"
+    },
+    {
+      "file": "sex_0_/MahjongVal_85_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_85_.mp3",
+      "bytes": 12855,
+      "sha256": "c58fa3980efd90e4d582732833d90d866100afd2b670908ab000467e401f1066"
+    },
+    {
+      "file": "sex_0_/MahjongVal_86_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_86_.mp3",
+      "bytes": 12019,
+      "sha256": "f214873de0569f3f72bf4eaff443336de6cd0796f89d0dd0196ea5f1be454dd3"
+    },
+    {
+      "file": "sex_0_/MahjongVal_87_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_87_.mp3",
+      "bytes": 12437,
+      "sha256": "a4463cc172a9873b82e0110aec5f6b482fbb83893f9f68473f74fa5dfb6bf74d"
+    },
+    {
+      "file": "sex_0_/MahjongVal_88_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_88_.mp3",
+      "bytes": 11601,
+      "sha256": "23fdade46733338c781a9ca7696296372b204fbf082fc41b903c887e8727bc20"
+    },
+    {
+      "file": "sex_0_/MahjongVal_89_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/MahjongVal_89_.mp3",
+      "bytes": 12855,
+      "sha256": "f8bf4c99d041c8009f6aa48ffbc94390558ac4c3a5aa43761eede62d31805317"
+    },
+    {
+      "file": "sex_0_/Round_Peng_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/Round_Peng_.mp3",
+      "bytes": 1716,
+      "sha256": "5ec490e26257ee7427f3c37437e9e6bef07843b249e9cd955ef03daf8f578cc8"
+    },
+    {
+      "file": "sex_0_/Round_Gang_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/Round_Gang_.mp3",
+      "bytes": 9511,
+      "sha256": "bd50538ab0e6aa27d0227ca882bcdb36a28d7ff7ae21f52b1e258d104a230d36"
+    },
+    {
+      "file": "sex_0_/Round_Hu_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/Round_Hu_.mp3",
+      "bytes": 43993,
+      "sha256": "4cedd9f20ecb76fc990e0614b7c777830c81db713a83eb112d3bbacba0597ae7"
+    },
+    {
+      "file": "sex_0_/Round_ZiMo_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_0_/Round_ZiMo_.mp3",
+      "bytes": 12855,
+      "sha256": "6b5f639fa5c38d7b16e14fba357c212e8d8668fcb0e948c984299bdd28021507"
+    },
+    {
+      "file": "sex_1_/MahjongVal_21_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_21_.mp3",
+      "bytes": 10243,
+      "sha256": "33122796a036991ecab163ac88e45be13cd0c3022418d0b0a397582829c9db51"
+    },
+    {
+      "file": "sex_1_/MahjongVal_22_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_22_.mp3",
+      "bytes": 9616,
+      "sha256": "f0357c783662fc1cab01ccd57aac11d304d175fb29f1b4a9e74db5e7bed7fdf4"
+    },
+    {
+      "file": "sex_1_/MahjongVal_23_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_23_.mp3",
+      "bytes": 10870,
+      "sha256": "178df0d589f4d930baba2cfc666d620e33160de526cbe18a9b5fdb5af1eb4a54"
+    },
+    {
+      "file": "sex_1_/MahjongVal_24_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_24_.mp3",
+      "bytes": 11810,
+      "sha256": "d053b638cdba218ccbcfbbc24343fb921736d6ca4fd6cc27eb89b08f39a9f228"
+    },
+    {
+      "file": "sex_1_/MahjongVal_25_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_25_.mp3",
+      "bytes": 10243,
+      "sha256": "e975febf1e4fb5d123021bda9b088b7922f154849a375819ef3034bb638f06e8"
+    },
+    {
+      "file": "sex_1_/MahjongVal_26_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_26_.mp3",
+      "bytes": 10243,
+      "sha256": "624a89e177eda94ca969b9051ed3ac34ee1717f8f585f7a8567912ed55c9e3ee"
+    },
+    {
+      "file": "sex_1_/MahjongVal_27_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_27_.mp3",
+      "bytes": 12437,
+      "sha256": "8ac073676dc1aa36931f694be4ee7177f591e7ad7ef4c46e1a49af3dab55eec5"
+    },
+    {
+      "file": "sex_1_/MahjongVal_28_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_28_.mp3",
+      "bytes": 10243,
+      "sha256": "45cf3d4897148bbf8c4e65d453208c65315957ac6f805b0ef8f21cb01e1a00d0"
+    },
+    {
+      "file": "sex_1_/MahjongVal_29_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_29_.mp3",
+      "bytes": 10870,
+      "sha256": "b314f76f1dfd152fd3014f213ec498d47092076a18670bc8db3ad0c31e309c35"
+    },
+    {
+      "file": "sex_1_/MahjongVal_41_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_41_.mp3",
+      "bytes": 11810,
+      "sha256": "2b21d1c6ca2496f78dc9f752181bd805ecf266fe8116b03ef56c51b839f2b8b2"
+    },
+    {
+      "file": "sex_1_/MahjongVal_42_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_42_.mp3",
+      "bytes": 10703,
+      "sha256": "4291503933f3a3b28f1e205c38dda2bf6a975a55a9fad5e39031f0767ed02764"
+    },
+    {
+      "file": "sex_1_/MahjongVal_43_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_43_.mp3",
+      "bytes": 11810,
+      "sha256": "d1d72cc32aed4c28eec20a848e71488445e6ac9b608f69fb875cb2661b7d2ce0"
+    },
+    {
+      "file": "sex_1_/MahjongVal_44_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_44_.mp3",
+      "bytes": 11810,
+      "sha256": "4163030b41486906010ed6d274ed872abe857a6c6a76c420967108b53e53824d"
+    },
+    {
+      "file": "sex_1_/MahjongVal_45_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_45_.mp3",
+      "bytes": 10870,
+      "sha256": "4baf476c47dd608ea2ffc936bec712c65b74bd4b11b0bf6f1cd65fce81ca7562"
+    },
+    {
+      "file": "sex_1_/MahjongVal_46_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_46_.mp3",
+      "bytes": 12437,
+      "sha256": "4189f0914244c1271dea1b089a3b6cac0c06c42635006d72d87c75aceada9fbb"
+    },
+    {
+      "file": "sex_1_/MahjongVal_47_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_47_.mp3",
+      "bytes": 13377,
+      "sha256": "2b104aa5709cc70a2fa9bc3ddd33b4f31b26c73fed24f41776ae003d93216863"
+    },
+    {
+      "file": "sex_1_/MahjongVal_48_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_48_.mp3",
+      "bytes": 10076,
+      "sha256": "a7515014688977adcf4e89eb4a63183be248ff2a8a8c39be5b266b9a39c7bb51"
+    },
+    {
+      "file": "sex_1_/MahjongVal_49_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_49_.mp3",
+      "bytes": 11810,
+      "sha256": "36ec9db48452600d555bec146be341f2a4195b72910e285b0a110e6c88eca980"
+    },
+    {
+      "file": "sex_1_/MahjongVal_81_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_81_.mp3",
+      "bytes": 12437,
+      "sha256": "eed025a51ad8d01681bfa726d01b8d67ae194f6c8e0dcb900b541719d79e8bc0"
+    },
+    {
+      "file": "sex_1_/MahjongVal_82_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_82_.mp3",
+      "bytes": 10076,
+      "sha256": "13155d2dde9af42411feddbacd2c1f126f1a51ae5549abd50ef3326642b9b4a8"
+    },
+    {
+      "file": "sex_1_/MahjongVal_83_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_83_.mp3",
+      "bytes": 11810,
+      "sha256": "4a3c5070bc5a53b1164c9bc147f9821cea0e0e994243fb47e5dd2ce03ed5fb4f"
+    },
+    {
+      "file": "sex_1_/MahjongVal_84_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_84_.mp3",
+      "bytes": 14004,
+      "sha256": "b58765e4b3ed47cc543f7a1d8abd18230c00c2f55903530b99e101e9bff2b2b9"
+    },
+    {
+      "file": "sex_1_/MahjongVal_85_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_85_.mp3",
+      "bytes": 11810,
+      "sha256": "5d6c8f8f77dcd4b7aa5332377c9f588e5e465f20f3d66d14a6e910de1f633c75"
+    },
+    {
+      "file": "sex_1_/MahjongVal_86_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_86_.mp3",
+      "bytes": 12437,
+      "sha256": "2cefeb8dd89773cd19c976daf8235ce7d67f7f4f5fb8fab4dfdcbd321c673daa"
+    },
+    {
+      "file": "sex_1_/MahjongVal_87_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_87_.mp3",
+      "bytes": 13377,
+      "sha256": "1a0d26df173d9505f51b93a3ba730f5a3b5542a31826df93b7132e02f0f2ccc7"
+    },
+    {
+      "file": "sex_1_/MahjongVal_88_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_88_.mp3",
+      "bytes": 11643,
+      "sha256": "229353670956477c75c6ae2a72ec9f18fbce867156571ca6c23b98facda9c7f3"
+    },
+    {
+      "file": "sex_1_/MahjongVal_89_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/MahjongVal_89_.mp3",
+      "bytes": 10870,
+      "sha256": "31b8e15352bd1504ddaa431c3cd5be595368e3c88793c3fa4ad913801fa9f921"
+    },
+    {
+      "file": "sex_1_/Round_Peng_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/Round_Peng_.mp3",
+      "bytes": 10076,
+      "sha256": "2a50d594e6bb6708c120a772822ec88de7b7f92637d6cca8ced923a19cd6a408"
+    },
+    {
+      "file": "sex_1_/Round_Gang_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/Round_Gang_.mp3",
+      "bytes": 10243,
+      "sha256": "4107c698b0b71cef57521ba74ab9e0bbc8a4af14afcc0fab1087ef1f2d6f90dc"
+    },
+    {
+      "file": "sex_1_/Round_Hu_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/Round_Hu_.mp3",
+      "bytes": 37514,
+      "sha256": "7406b134d00116d7bc7de0aab4e66e1958eee6c2d06c86f899f993bc23a0096a"
+    },
+    {
+      "file": "sex_1_/Round_ZiMo_.mp3",
+      "source": "assets/game/MJ_weihai_/res/1/audio/sex_1_/Round_ZiMo_.mp3",
+      "bytes": 32499,
+      "sha256": "3a71f6a8ee6ac95147d6fa90882f3ae7f75fe7cabf0e469e31550ffa4d67948a"
+    },
+    {
+      "file": "LICENSE",
+      "source": "LICENSE",
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+  ]
+}

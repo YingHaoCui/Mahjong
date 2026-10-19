@@ -3,7 +3,7 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>血战 · AI 竞技场</title><link rel="stylesheet" href="/webgame/arena.css"></head>
 <body>
-<header><a href="/" class="brand">血战<span>MAHJONG ARENA</span></a><span class="tag">四席对弈 · 四川麻将</span><button id="rulesButton" class="quiet">规则</button></header>
+<header><a href="/" class="brand">血战<span>MAHJONG ARENA</span></a><span class="tag">四席对弈 · 四川麻将</span><div class="audio-controls"><button id="soundToggle" class="quiet" type="button" aria-pressed="false">开启音效</button><label for="soundVolume">音量<input id="soundVolume" type="range" min="0" max="100" value="70" aria-label="音效音量"></label></div><button id="rulesButton" class="quiet">规则</button></header>
 <main>
   <section id="lobby">
     <div class="intro"><span class="eyebrow">FOUR SEATS. ONE TABLE.</span><h1>让不同的智能，<br>坐上同一张牌桌。</h1><p>创建房间，将四个独立座位交给朋友或 AI。<br>每一手选择，交由真实的麻将规则裁决。</p></div>
@@ -33,5 +33,6 @@
 <div id="notice" role="status" hidden></div>
 <dialog id="rulesDialog"><div class="section-head"><h2>本场规则</h2><button id="closeRules" class="quiet">关闭</button></div><div id="rulesContent"></div></dialog>
 <dialog id="manualCopyDialog"><div class="section-head"><h2>手动复制</h2><button id="closeManualCopy" class="quiet" type="button">关闭</button></div><p>浏览器未允许自动复制。下方内容已选中，请按 Ctrl+C / ⌘C，或长按选择“复制”。</p><textarea id="manualCopyText" rows="6" readonly aria-label="待复制内容"></textarea></dialog>
+<script src="/webgame/audio.js"></script>
 <script src="/webgame/arena.js"></script>
 </body></html>

@@ -7,6 +7,21 @@ let roomId = '', token = '', state = null, credentials = [], replay = null, repl
 let revealedSeats = new Set();
 let chatRenderKey = '', chatAttempt = null, chatSending = false;
 let exchangeSelection = {decisionId:null, indices:new Set()};
+const tableAudio = new MahjongAudio.TableAudio(() => {
+  const active = tableAudio.enabled && tableAudio.unlocked;
+  $('soundToggle').textContent = !tableAudio.enabled ? '音效已静音' : active ? '音效已开启' : '开启音效';
+  $('soundToggle').setAttribute('aria-pressed', String(active));
+  $('soundVolume').value = String(Math.round(tableAudio.volume * 100));
+});
+tableAudio.onChange();
+document.addEventListener('pointerdown', e => {if(!e.target.closest('#soundToggle'))tableAudio.unlock();});
+document.addEventListener('keydown', e => {if(!e.target.closest('#soundToggle'))tableAudio.unlock();});
+document.addEventListener('visibilitychange', () => {tableAudio.clear();tableAudio.skipNext = true;});
+$('soundToggle').addEventListener('click', () => {
+  tableAudio.setEnabled(!tableAudio.enabled || !tableAudio.unlocked);
+  tableAudio.unlock();
+});
+$('soundVolume').addEventListener('input', e => tableAudio.setVolume(Number(e.target.value) / 100));
 const requestId = () => globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 function el(tag, text, cls) {const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
 function button(label, fn, cls='quiet') {const b=el('button',label,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve().then(fn).catch(report));return b;}
@@ -40,6 +55,7 @@ function tile(t, mini=false) {const n=el('span',undefined,`tile c${t[0]}${mini?'
 function tiles(hand, count, mini=false) {const row=el('div',undefined,'tile-row');if(hand)hand.forEach(t=>row.append(tile(t,mini)));else for(let i=0;i<count;i++)row.append(el('span',undefined,'tile back'));return row;}
 async function rooms() {const data=await api('/api/rooms',undefined,'');$('rooms').replaceChildren();if(!data.rooms.length)$('rooms').append(el('p','还没有房间，创建第一张牌桌。'));for(const r of data.rooms.reverse()){const row=el('div',undefined,'room-entry');const info=el('div',r.name);info.append(el('small',`${STATUS[r.status]} · ${r.joined}/4 席 · ${r.gameNumber}/${r.games} 局`));row.append(info,button('进入',()=>openRoom(r.roomId)));$('rooms').append(row);}}
 async function openRoom(id, credential) {
+  tableAudio.reset();
   pollVersion++;roomId=id;token=credential??sessionStorage.getItem(seatKey(id))??sessionStorage.getItem(ownerKey(id))??'';
   history.replaceState(null,'',`/#${new URLSearchParams({room:id})}`);
   chatRenderKey='';chatAttempt=null;$('chatText').value='';$('chatGuestName').value=sessionStorage.getItem('mahjong-chat-name')||'';
@@ -111,6 +127,7 @@ function renderTable(game) {
   }
 }
 function render() {
+  if(state)tableAudio.observe(roomId, state.game, Boolean(replay));
   if(!state)return;$('roomId').textContent=state.roomId;$('roomName').textContent=state.name;$('roomStatus').textContent=`${STATUS[state.status]} · ${state.gameNumber}/${state.games} 局${Number.isInteger(state.failure?.participant)?' · '+state.seats[state.failure.participant].name+' 超时':''}${state.config.rulesVersion==='xuezhan-arena-v1'?' · 旧规则存档（新建房间启用换三张）':''}`;
   if(exchangeSelection.decisionId!==state.game?.decision?.decisionId)exchangeSelection={decisionId:state.game?.decision?.decisionId,indices:new Set()};
   $('ownerPanel').hidden=state.role!=='owner';$('ownerView').hidden=!sessionStorage.getItem(ownerKey(roomId))||state.role==='owner';$('joinForm').hidden=state.role==='seat'&&state.seats[state.participant].joined;

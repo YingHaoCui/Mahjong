@@ -19,7 +19,15 @@ from game_core import GameSession, STRATEGIES, compute_daily_par
 
 HERE = Path(sys._MEIPASS) / 'webgame' if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
 ASSETS = {'/': 'index.html', '/webgame/index.html': 'index.html',
-          '/webgame/arena.js': 'arena.js', '/webgame/arena.css': 'arena.css'}
+          '/webgame/arena.js': 'arena.js', '/webgame/arena.css': 'arena.css',
+          '/webgame/audio.js': 'audio.js'}
+# Only files declared by the bundled import manifest are served; never expose
+# the repository or accept arbitrary filesystem paths from a request.
+_audio_manifest = json.loads((HERE / 'audio/weihai/manifest.json').read_text(encoding='utf-8'))
+for _entry in _audio_manifest['files']:
+    ASSETS['/webgame/audio/weihai/' + _entry['file']] = 'audio/weihai/' + _entry['file']
+for _name in ('NOTICE.md', 'manifest.json'):
+    ASSETS['/webgame/audio/weihai/' + _name] = 'audio/weihai/' + _name
 PROTOCOLS = ('2025-11-25', '2025-06-18', '2025-03-26')
 
 

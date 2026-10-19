@@ -31,6 +31,34 @@ try {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(base);
+  // Decode every bundled MP3 in real Chromium, then exercise real Web Audio
+  // playback after an explicit user gesture (not a mocked audio backend).
+  const decoded = await page.evaluate(async () => {
+    const manifest = await (await fetch('/webgame/audio/weihai/manifest.json')).json();
+    const ctx = new AudioContext();
+    const durations = await Promise.all(manifest.files.filter(f=>f.file.endsWith('.mp3')).map(async f=>{
+      const r=await fetch('/webgame/audio/weihai/'+f.file);
+      if(!r.ok)throw new Error('Missing MP3 '+f.file);
+      return (await ctx.decodeAudioData(await r.arrayBuffer())).duration;
+    }));
+    await ctx.close();
+    window.audioProbe = new MahjongAudio.TableAudio();
+    document.getElementById('soundToggle').addEventListener('click',()=>window.audioProbe.unlock(),{once:true});
+    return durations;
+  });
+  assert.equal(decoded.length,63);assert.ok(decoded.every(n=>n>0));
+  await page.locator('#soundToggle').click();
+  await page.waitForFunction(()=>window.audioProbe.unlocked);
+  await page.evaluate(async()=>{
+    const probe=window.audioProbe;
+    await probe.play({clips:MahjongAudio.clipsFor([0,'discard',[0,1]],0)},probe.generation);
+    await probe.play({clips:MahjongAudio.clipsFor([1,'hu',[0,1]],1)},probe.generation);
+    await probe.context.close();
+  });
+  await page.locator('#soundToggle').click();
+  assert.equal(await page.locator('#soundToggle').getAttribute('aria-pressed'),'false');
+  await page.locator('#soundToggle').click();
+  await page.waitForFunction(()=>document.getElementById('soundToggle').getAttribute('aria-pressed')==='true');
   await page.locator('#createForm input[name=name]').fill('四 AI 集成赛');
   await page.locator('#createForm input[name=games]').fill('1');
   await page.locator('#createForm button[type=submit]').click();
