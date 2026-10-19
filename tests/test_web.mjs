@@ -8,8 +8,11 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const require = createRequire(path.join(process.env.MAHJONG_TEST_MODULE_ROOT || root, 'package.json'));
-const { Client } = await import(pathToFileURL(require.resolve('@modelcontextprotocol/sdk/client/index.js')));
-const { StreamableHTTPClientTransport } = await import(pathToFileURL(require.resolve('@modelcontextprotocol/sdk/client/streamableHttp.js')));
+const harnessRequire = process.env.MAHJONG_HARNESS_ROOT ? createRequire(path.join(process.env.MAHJONG_HARNESS_ROOT,'packages/mcp/mcp-client/package.json')) : null;
+const { Client, StreamableHTTPClientTransport } = harnessRequire
+  ? await import(pathToFileURL(harnessRequire.resolve('@modelcontextprotocol/client')))
+  : {...await import(pathToFileURL(require.resolve('@modelcontextprotocol/sdk/client/index.js'))),
+     ...await import(pathToFileURL(require.resolve('@modelcontextprotocol/sdk/client/streamableHttp.js')))};
 const { chromium } = require('@playwright/test');
 const temp = await mkdtemp(path.join(root, 'tests', '.runtime-'));
 const server = spawn(process.env.MAHJONG_PYTHON || 'python', ['webgame/server.py', '0'], {
@@ -98,7 +101,7 @@ try {
   await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp')));
   clients.push(client);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length,8);
+  assert.equal(tools.tools.length,10);
   for (let i=0;i<4;i++) {
     const joined = await client.callTool({name:'join_seat',arguments:{name:`模型 ${i+1}`,seatId:seatIds[i]}});
     assert.equal(joined.structuredContent.participant,i);
@@ -111,25 +114,36 @@ try {
   const publicRoom = await (await fetch(`${base}/api/rooms/${roomId}`)).json();
   assert.ok(publicRoom.game.players.every(p=>!('hand' in p)));
   let moves=0;
-  while (true) {
-    const views = await Promise.all(seatIds.map(seatId=>client.callTool({name:'get_observation',arguments:{seatId}})));
-    const states = views.map(r=>{assert.ok(!r.isError,JSON.stringify(r));return r.structuredContent;});
-    if(states[0].status==='complete')break;
-    const work=states.map(async (s,i)=>{
-      const d=s.game.decision;if(!d)return;
+  const checked = r=>{assert.ok(!r.isError,JSON.stringify(r));return r.structuredContent;};
+  // Four independent blocking play loops on ONE official MCP connection.
+  // No get_observation polling or repeated job-status checks.
+  await Promise.all(seatIds.map(async (seatId,i)=>{
+    let result=checked(await client.callTool({name:'next_decision',arguments:{seatId,timeoutMs:30000}}));
+    while(result.status!=='terminal') {
+      assert.equal(result.status,'ready',JSON.stringify(result));
+      const s=result.state,d=s.game.decision;
       assert.equal(s.participant,i);
+      assert.ok(!('history' in s.game));
       for(const p of s.game.players)if(p.seat!==s.game.yourSeat)assert.ok(!('hand' in p));
       const options=d.legalActions;
       const action=options.find(a=>['hu','zimo','robkong'].includes(a.type)) || options.find(a=>a.type==='pass') || options.at(-1);
-      const args={seatId:seatIds[i],decisionId:d.decisionId,actionId:action.actionId,requestId:d.decisionId};
-      const result=await client.callTool({name:'submit_action',arguments:args});
-      assert.ok(!result.isError,JSON.stringify(result));
-      if(moves===0){const retry=await client.callTool({name:'submit_action',arguments:args});assert.equal(retry.structuredContent.duplicate,true);}
+      const args={seatId,decisionId:d.decisionId,actionId:action.actionId,requestId:d.decisionId,cursor:result.cursor,timeoutMs:30000};
       moves++;
-    });
-    await Promise.all(work);
-    assert.ok(moves<1500,'Game failed to terminate');
-  }
+      assert.ok(moves<1500,'Game failed to terminate');
+      result=checked(await client.callTool({name:'act_and_wait',arguments:args}));
+      assert.equal(result.submission.accepted,true);
+    }
+  }));
+  // A pending SSE call survives the old 25s ceiling, including a heartbeat,
+  // while a different seat's request on the same client completes immediately.
+  const idle=await (await fetch(base+'/api/rooms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'long-wait-test'})})).json();
+  const started=Date.now();
+  const pending=client.callTool({name:'next_decision',arguments:{seatId:idle.seatIds[0],timeoutMs:26000}});
+  const otherSeatWait=checked(await client.callTool({name:'next_decision',arguments:{seatId:idle.seatIds[1],timeoutMs:0}}));
+  assert.equal(otherSeatWait.status,'timeout');
+  const timeout=checked(await pending);
+  assert.equal(timeout.status,'timeout');assert.ok(!('state' in timeout));
+  assert.ok(Date.now()-started>=25000);
   await page.waitForFunction(()=>document.getElementById('roomStatus').textContent.includes('比赛结束'));
   await page.locator('#replayButton').click();
   await page.locator('#replayControls').waitFor({state:'visible'});

@@ -1,0 +1,20 @@
+# deepseek-harness Cordis PATCH format. Merge into the profile patch or load
+# with --patch. Replace the URL with your deployed Mahjong server.
+# If Mahjong is already registered, update that row instead of inserting
+# another row with the same serverName.
+- insert:
+    - id: mcp-mahjong
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: mahjong
+        transport: streamable-http
+        url: http://127.0.0.1:8765/mcp
+        # Server defaults to 10min, permits up to 30min. Client allows 31min.
+        toolCallTimeoutMs: 1860000
+
+# Existing base-bundle row override. Needed only for calls inside PTC;
+# direct native MCP calls need only the MCP entry above.
+- id: ptc-runtime
+  config:
+    timeoutMs: 1860000
+    maxTimeoutMs: 1860000

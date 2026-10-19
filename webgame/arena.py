@@ -569,6 +569,75 @@ class ArenaStore:
                     return {'status': 'timeout', 'state': view}
                 self.condition.wait(min(remaining, 1))
 
+    def decision_cursor(self, room, cursor):
+        if not cursor:
+            return 0, 0, 0
+        parts = cursor.split(':')
+        require(len(parts) == 4 and parts[0] == room.id and
+                all(v.isascii() and v.isdigit() and len(v) <= 12 for v in parts[1:]),
+                'invalid_arguments', 'Invalid decision cursor')
+        values = tuple(map(int, parts[1:]))
+        require(values[0] <= len(room.games) and (not room.game or values[0] != room.game.number or
+                values[1] <= len(room.game.dealer.act_history)), 'invalid_arguments', 'Decision cursor is ahead of game history')
+        return values
+
+    def next_decision(self, token, cursor='', timeout=600, cancelled=None, after_decision=None):
+        """Wait without returning chat/revision changes or repeatedly building observations."""
+        end = time.monotonic() + min(max(timeout, 0), 1800)
+        with self.condition:
+            room, participant = self.seat_room(token)
+            seen_game, seen_action, seen_chat = self.decision_cursor(room, cursor)
+            while True:
+                if cancelled is not None and cancelled.is_set():
+                    return None
+                self.expire_room(room, time.time())
+                game = room.game
+                seat = game.seat_for(participant) if game else None
+                pending = game.pending.get(seat) if game else None
+                ready = (room.status == 'playing' and pending is not None and
+                         seat not in game.responses and pending['decisionId'] != after_decision)
+                terminal = room.status in ('complete', 'forfeit', 'stopped', 'invalid')
+                if ready or terminal:
+                    view = room.view(token)
+                    if game:
+                        current = view['game']
+                        history = current.pop('history')
+                        current.pop('events', None)
+                        start = seen_action if seen_game == game.number else 0
+                        require(start <= len(history), 'invalid_arguments', 'Decision cursor is ahead of action history')
+                        current['recentActions'] = history[max(start, len(history) - 100):]
+                        current['actionsTruncated'] = len(history) - start > 100
+                        after_chat = seen_chat if seen_game == game.number else 0
+                        # Keep the newest bounded chat batch; read_chat can recover older pages.
+                        chat = room.chat_view(after_id=0)
+                        chat['messages'] = [m for m in chat['messages'] if m['id'] > after_chat]
+                        chat['hasEarlier'] = any(m['gameNumber'] == game.number and
+                            after_chat < m['id'] < chat['messages'][0]['id'] for m in room.chat_messages) if chat['messages'] else False
+                        view['chat'] = chat
+                        cursor = f'{room.id}:{game.number}:{len(history)}:{chat["lastMessageId"]}'
+                    # Drop management and repeated configuration; rules are read once.
+                    compact = {k: view[k] for k in ('roomId', 'status', 'participant', 'serverTime', 'gameNumber', 'game', 'chat')}
+                    compact['seats'] = [{k: s[k] for k in ('name', 'score')} for s in view['seats']]
+                    if view['failure']:
+                        compact['failure'] = view['failure']
+                    return {'status': 'ready' if ready else 'terminal', 'cursor': cursor, 'state': compact}
+                remaining = end - time.monotonic()
+                if remaining <= 0:
+                    # Never advance the cursor for data not delivered to the model.
+                    return {'status': 'timeout', 'cursor': cursor, 'roomId': room.id,
+                            'matchStatus': room.status, 'gameNumber': len(room.games)}
+                self.condition.wait(min(remaining, 1))
+
+    def act_and_wait(self, token, payload, cursor='', timeout=600, cancelled=None):
+        with self.condition:
+            room, _ = self.seat_room(token)
+            self.decision_cursor(room, cursor)
+            receipt = self.submit(token, payload)
+        result = self.next_decision(token, cursor, timeout, cancelled, payload['decisionId'])
+        if result is not None:
+            result['submission'] = {k: receipt[k] for k in ('accepted', 'duplicate')}
+        return result
+
     def tick(self):
         with self.condition:
             for room in list(self.rooms.values()):
