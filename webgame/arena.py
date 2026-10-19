@@ -366,12 +366,16 @@ class ArenaStore:
     def join(self, token, name, kind):
         with self.condition:
             room, _ = self.seat_room(token)
-            old_seats, old_revision = copy.deepcopy(room.seats), room.revision
+            record = copy.deepcopy(room.record())
             try:
                 room.join(token, name, kind)
+                if room.status == 'waiting' and all(s['joined'] for s in room.seats):
+                    room.command({'op': 'start', 'at': time.time(), 'seed': secrets.randbits(64)})
                 self.save(room)
             except Exception:
-                room.seats, room.revision = old_seats, old_revision
+                restored = Room.restore(record)
+                room.__dict__.clear()
+                room.__dict__.update(restored.__dict__)
                 raise
             return room.view(token)
 
@@ -445,6 +449,9 @@ class ArenaStore:
     def tick(self):
         with self.condition:
             for room in list(self.rooms.values()):
+                # Also recover fully joined rooms created before auto-start existed.
+                if room.status == 'waiting' and all(s['joined'] for s in room.seats):
+                    self.commit(room, {'op': 'start', 'at': time.time(), 'seed': secrets.randbits(64)})
                 self.expire_room(room, time.time())
 
     def replay(self, room, number):

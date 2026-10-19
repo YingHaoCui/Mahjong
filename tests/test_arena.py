@@ -48,6 +48,66 @@ def finish(store, room, data):
 
 
 class ArenaTests(unittest.TestCase):
+    def test_fourth_distinct_join_auto_starts_once(self):
+        store=ArenaStore()
+        data=store.create({'games':2})
+        room=store.room(data['roomId'])
+        for i in range(3):
+            state=store.join(data['seatIds'][i],f'AI {i}','ai')
+            self.assertEqual(state['status'],'waiting')
+            self.assertIsNone(state['game'])
+        # Rejoining one of three occupied seats must not count as a fourth.
+        store.join(data['seatIds'][0],'AI renamed','ai')
+        self.assertEqual(room.status,'waiting')
+        state=store.join(data['seatIds'][3],'AI 3','ai')
+        self.assertEqual(state['status'],'playing')
+        self.assertEqual(state['game']['decision']['phase'],'daque')
+        first=room.game
+        store.join(data['seatIds'][3],'AI reconnected','ai')
+        store.tick()
+        self.assertIs(room.game,first)
+        self.assertEqual(len(room.games),1)
+        self.assertEqual(sum(c['op']=='start' for c in room.commands),1)
+        finish(store,room,data)
+        store.join(data['seatIds'][0],'AI 0','ai')
+        store.tick()
+        self.assertEqual(room.status,'between_games')
+        self.assertEqual(len(room.games),1)
+
+    def test_auto_start_persistence_rollback_and_waiter(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as directory:
+            store=ArenaStore(directory)
+            data=store.create({})
+            for i in range(3):store.join(data['seatIds'][i],f'AI {i}','ai')
+            room=store.room(data['roomId'])
+            with patch.object(store,'save',side_effect=OSError('disk full')):
+                with self.assertRaises(OSError):store.join(data['seatIds'][3],'AI 3','ai')
+            self.assertEqual(room.status,'waiting')
+            self.assertFalse(room.seats[3]['joined'])
+            self.assertEqual(room.games,[])
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                waiting=pool.submit(store.wait,data['seatIds'][0],timeout=2,decision_only=True)
+                store.join(data['seatIds'][3],'AI 3','ai')
+                self.assertEqual(waiting.result(timeout=3)['state']['status'],'playing')
+            restored=ArenaStore(directory).room(room.id)
+            self.assertEqual(restored.game.view(),room.game.view())
+
+    def test_tick_starts_legacy_full_room_but_not_stopped_room(self):
+        store=ArenaStore()
+        data=store.create({})
+        room=store.room(data['roomId'])
+        with store.condition:
+            for i,token in enumerate(data['seatIds']):room.join(token,f'AI {i}','ai')
+            store.save(room)
+        store.tick()
+        self.assertEqual(room.status,'playing')
+        self.assertEqual(len(room.games),1)
+        with store.condition:store.commit(room,{'op':'stop','at':time.time()})
+        store.join(data['seatIds'][0],'AI reconnect','ai')
+        store.tick()
+        self.assertEqual(room.status,'stopped')
+        self.assertEqual(len(room.games),1)
+
     def test_short_ids_unique_and_legacy_records_preserved(self):
         store=ArenaStore()
         allocated=set()
@@ -293,7 +353,7 @@ class HTTPTests(unittest.TestCase):
         for i,token in enumerate(tokens):
             result=self.mcp('join_seat',{'name':f'Bot{i}','seatId':token})
             self.assertEqual(result['structuredContent']['participant'],i)
-        self.request(f'/api/rooms/{rid}/start',{},data['ownerToken'])
+        self.assertEqual(result['structuredContent']['status'],'playing')
         obs=self.mcp('get_observation',{'seatId':tokens[0]})['structuredContent']
         self.assertEqual(obs['game']['decision']['phase'],'daque')
         d=obs['game']['decision']
@@ -324,7 +384,7 @@ class HTTPTests(unittest.TestCase):
             for i,seat in enumerate(data['seatIds']):
                 r=self.mcp('join_seat',{'name':f'Chat {i}','seatId':seat})
                 self.assertEqual(r['structuredContent']['participant'],i)
-            self.request(f'/api/rooms/{data["roomId"]}/start',{},data['ownerToken'])
+            self.assertEqual(r['structuredContent']['status'],'playing')
             # Same header/client: alternating calls must not follow the last join.
             for i in (0,3,1,2,0):
                 r=self.mcp('get_observation',{'seatId':data['seatIds'][i]})

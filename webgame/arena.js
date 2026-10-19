@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const SUITS = ['条', '万', '筒'];
 const ACTIONS = {daque:'定缺', discard:'打出', pong:'碰', kong:'明杠', ankong:'暗杠', jiakong:'加杠', hu:'胡', zimo:'自摸', robkong:'抢杠胡', pass:'过', draw:'摸牌'};
-const STATUS = {waiting:'等待入席',playing:'对局进行中',between_games:'本局已结算 · 等待下一局',complete:'比赛结束',forfeit:'超时判负 · 比赛结束',stopped:'比赛已结束',invalid:'引擎异常 · 本局无效'};
+const STATUS = {waiting:'等待入席 · 满员自动开始',playing:'对局进行中',between_games:'本局已结算 · 等待下一局',complete:'比赛结束',forfeit:'超时判负 · 比赛结束',stopped:'比赛已结束',invalid:'引擎异常 · 本局无效'};
 let roomId = '', token = '', state = null, credentials = [], replay = null, replayTimer = null, pollVersion = 0, noticeTimer;
 function el(tag, text, cls) {const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
 function button(label, fn, cls='quiet') {const b=el('button',label,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve().then(fn).catch(report));return b;}
@@ -18,7 +18,20 @@ const endpoint = op => `/api/rooms/${encodeURIComponent(roomId)}${op?'/'+op:''}`
 const ownerKey = id => `mahjong-owner:${id}`;
 const seatKey = id => `mahjong-seat:${id}`;
 function invite(seatId) {return `${location.origin}/#${new URLSearchParams({room:roomId,seat:seatId})}`;}
-async function copy(text) {await navigator.clipboard.writeText(text);notice('已复制');}
+async function copy(text) {
+  // Clipboard API requires a secure context; ordinary HTTP needs a fallback.
+  try {
+    if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);notice('已复制');return;}
+  } catch (_) { /* Permission denied: try the user-gesture clipboard command. */ }
+  const previousFocus=document.activeElement;
+  const probe=el('textarea',undefined,'clipboard-probe');probe.value=text;probe.readOnly=true;
+  probe.setAttribute('aria-label','复制内容');document.body.append(probe);probe.focus();probe.select();
+  let copied=false;
+  try {copied=document.execCommand('copy');} catch (_) { /* Offer selectable text below. */ }
+  probe.remove();previousFocus?.focus({preventScroll:true});
+  if(copied){notice('已复制');return;}
+  const field=$('manualCopyText');field.value=text;$('manualCopyDialog').showModal();field.focus();field.select();
+}
 function tile(t, mini=false) {const n=el('span',undefined,`tile c${t[0]}${mini?' mini':''}`);n.append(el('b',t[1]),el('small',SUITS[t[0]]));return n;}
 function tiles(hand, count, mini=false) {const row=el('div',undefined,'tile-row');if(hand)hand.forEach(t=>row.append(tile(t,mini)));else for(let i=0;i<count;i++)row.append(el('span',undefined,'tile back'));return row;}
 async function rooms() {const data=await api('/api/rooms',undefined,'');$('rooms').replaceChildren();if(!data.rooms.length)$('rooms').append(el('p','还没有房间，创建第一张牌桌。'));for(const r of data.rooms.reverse()){const row=el('div',undefined,'room-entry');const info=el('div',r.name);info.append(el('small',`${STATUS[r.status]} · ${r.joined}/4 席 · ${r.gameNumber}/${r.games} 局`));row.append(info,button('进入',()=>openRoom(r.roomId)));$('rooms').append(row);}}
@@ -33,6 +46,7 @@ async function poll(version) {
   while(version===pollVersion){try{if(token&&state?.role==='seat'&&!['complete','forfeit','stopped','invalid'].includes(state.status)){const r=await api(endpoint(`wait?afterRevision=${state.revision}`));if(version!==pollVersion)return;state=r.state;render();}else{await new Promise(r=>setTimeout(r,1200));if(version!==pollVersion)return;await refresh();}}catch(e){if(version!==pollVersion)return;report(e);await new Promise(r=>setTimeout(r,3000));}}
 }
 function renderCredentials() {
+  $('allSeatIds').value=credentials.join('\n');
   $('credentials').replaceChildren();credentials.forEach((id,i)=>{const c=el('div',undefined,'credential');c.append(el('strong',`参赛者 ${i+1} · ${state.seats[i].name}`),el('code',id));const row=el('div',undefined,'row');row.append(button('复制座位 ID',()=>copy(id)),button('复制 AI 入席指令',()=>copy(`使用 Mahjong MCP 参赛。你的 seatId 是 ${id}。先调用 join_seat({seatId: "${id}", name: "AI ${i+1}"}) 加入。此后每次 get_observation、wait_for_decision 和 submit_action 都必须传 seatId: "${id}"；不要依赖共享连接记住座位。读取 get_rules，按 legalActions 决策；between_games 继续等待，complete/forfeit/stopped/invalid 时结束。`)),button('复制入席链接',()=>copy(invite(id))),button('我来入席',()=>{window.open(invite(id),'_blank','noopener');}));c.append(row);const d=el('details');d.append(el('summary','共享 MCP 配置（无需鉴权）'));d.append(el('pre',JSON.stringify({mcpServers:{mahjong:{type:'http',url:`${location.origin}/mcp`}}},null,2)),el('p','一个 harness 配置一次即可。四个会话各自使用自己的 seatId，每次座位相关调用都传入。','muted'));c.append(d);$('credentials').append(c);});
 }
 function renderTable(game) {
@@ -45,7 +59,7 @@ function renderTable(game) {
 function render() {
   if(!state)return;$('roomId').textContent=state.roomId;$('roomName').textContent=state.name;$('roomStatus').textContent=`${STATUS[state.status]} · ${state.gameNumber}/${state.games} 局${Number.isInteger(state.failure?.participant)?' · '+state.seats[state.failure.participant].name+' 超时':''}`;
   $('ownerPanel').hidden=state.role!=='owner';$('ownerView').hidden=!sessionStorage.getItem(ownerKey(roomId))||state.role==='owner';$('joinForm').hidden=state.role==='seat'&&state.seats[state.participant].joined;
-  $('startButton').disabled=!['waiting','between_games'].includes(state.status)||!state.seats.every(s=>s.joined);$('startButton').textContent=state.status==='between_games'?'开始下一局 · 换座':'开始本局';$('stopButton').disabled=['complete','stopped','forfeit','invalid'].includes(state.status);
+  $('startButton').disabled=state.status!=='between_games';$('startButton').textContent=state.status==='between_games'?'开始下一局 · 换座':state.status==='waiting'?'满员自动开始':'开始本局';$('stopButton').disabled=['complete','stopped','forfeit','invalid'].includes(state.status);
   $('credentials').querySelectorAll('.credential > strong').forEach((label,i)=>label.textContent=`参赛者 ${i+1} · ${state.seats[i].name}`);
   const board=$('leaderboard');board.replaceChildren();[...state.seats].sort((a,b)=>b.score-a.score).forEach((p,i)=>{const r=el('div',undefined,'ranking');const name=el('span',`${i+1}. ${p.name}${p.joined?'':' · 未入席'}`);name.append(el('div',`${p.games} 局 · 胡 ${p.huGames} · 自摸 ${p.zimoGames}${p.assistedGames?' · '+p.assistedGames+' 辅助局':''}`,'muted'));r.append(name,el('strong',`${p.score>=0?'+':''}${p.score}`));board.append(r);});
   if(!replay)renderTable(state.game);
@@ -66,6 +80,9 @@ $('stopButton').addEventListener('click',async()=>{try{state=await api(endpoint(
 $('publicView').addEventListener('click',()=>openRoom(roomId,'').catch(report));
 $('ownerView').addEventListener('click',()=>openRoom(roomId,sessionStorage.getItem(ownerKey(roomId))).catch(report));
 $('shareRoom').addEventListener('click',()=>copy(`${location.origin}/#${new URLSearchParams({room:roomId})}`).catch(report));
+$('copyAllSeats').addEventListener('click',()=>copy(credentials.join('\n')).catch(report));
+$('allSeatIds').addEventListener('click',e=>e.target.select());
+$('closeManualCopy').addEventListener('click',()=>$('manualCopyDialog').close());
 $('adminLink').addEventListener('click',()=>copy(`${location.origin}/#${new URLSearchParams({room:roomId,owner:sessionStorage.getItem(ownerKey(roomId))})}`).catch(report));
 $('refreshRooms').addEventListener('click',()=>rooms().catch(report));
 $('rulesButton').addEventListener('click',async()=>{try{const r=await api('/api/rules',undefined,'');$('rulesContent').replaceChildren();Object.entries(r).forEach(([k,v])=>{$('rulesContent').append(el('h2',k),el('p',Array.isArray(v)?v.join(' / '):v));});$('rulesDialog').showModal();}catch(e){report(e);}});

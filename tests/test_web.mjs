@@ -38,6 +38,34 @@ try {
   const roomId = await page.locator('#roomId').textContent();
   const seatIds = await page.locator('#credentials code').allTextContents();
   assert.equal(seatIds.length, 4);
+  const allSeats=seatIds.join('\n');
+  assert.equal(await page.locator('#allSeatIds').inputValue(),allSeats);
+  await context.grantPermissions(['clipboard-read','clipboard-write']);
+  await page.locator('#copyAllSeats').click();
+  assert.equal((await page.evaluate(()=>navigator.clipboard.readText())).replace(/\r\n/g,'\n'),allSeats);
+  // Ordinary HTTP has no Clipboard API. Exercise the actual legacy copy path.
+  await page.evaluate(()=>{
+    window.testClipboard=navigator.clipboard;
+    window.testExecCommand=document.execCommand;
+    Object.defineProperty(navigator,'clipboard',{configurable:true,value:undefined});
+  });
+  await page.getByRole('button',{name:'复制座位 ID',exact:true}).first().click();
+  assert.equal(await page.evaluate(()=>window.testClipboard.readText()),seatIds[0]);
+  await page.locator('#copyAllSeats').click();
+  assert.equal((await page.evaluate(()=>window.testClipboard.readText())).replace(/\r\n/g,'\n'),allSeats);
+  // If copying is blocked entirely, show selected text rather than false success.
+  await page.evaluate(()=>document.execCommand=()=>false);
+  await page.locator('#copyAllSeats').click();
+  await page.locator('#manualCopyDialog').waitFor({state:'visible'});
+  assert.equal(await page.locator('#manualCopyText').inputValue(),allSeats);
+  assert.equal(await page.locator('#manualCopyText').evaluate(n=>n.value.slice(n.selectionStart,n.selectionEnd)),allSeats);
+  await page.locator('#closeManualCopy').click();
+  await page.locator('#allSeatIds').click();
+  assert.equal(await page.locator('#allSeatIds').evaluate(n=>n.value.slice(n.selectionStart,n.selectionEnd)),allSeats);
+  await page.evaluate(()=>{
+    document.execCommand=window.testExecCommand;
+    Object.defineProperty(navigator,'clipboard',{configurable:true,value:window.testClipboard});
+  });
   const client = new Client({name:'shared-harness-connector',version:'1'});
   await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp')));
   clients.push(client);
@@ -47,8 +75,7 @@ try {
     const joined = await client.callTool({name:'join_seat',arguments:{name:`模型 ${i+1}`,seatId:seatIds[i]}});
     assert.equal(joined.structuredContent.participant,i);
   }
-  await page.locator('#startButton:not([disabled])').waitFor();
-  await page.locator('#startButton').click();
+  // The fourth AI join starts the game without any owner click.
   await page.waitForFunction(() => document.getElementById('roomStatus').textContent.includes('对局进行中'));
   const publicRoom = await (await fetch(`${base}/api/rooms/${roomId}`)).json();
   assert.ok(publicRoom.game.players.every(p=>!('hand' in p)));
@@ -91,7 +118,6 @@ try {
   await human.waitForFunction(()=>document.getElementById('joinForm').hidden);
   assert.ok(!human.url().includes(second.seatIds[0]));
   for(let i=1;i<4;i++)await fetch(`${base}/api/rooms/${second.roomId}/join`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+second.seatIds[i]},body:JSON.stringify({name:`玩家 ${i}`,kind:'human'})});
-  await fetch(`${base}/api/rooms/${second.roomId}/start`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+second.ownerToken},body:'{}'});
   await human.locator('#actions button').first().waitFor();
   await human.locator('#actions button').first().click();
   await human.waitForFunction(()=>document.getElementById('decisionPanel').hidden);
