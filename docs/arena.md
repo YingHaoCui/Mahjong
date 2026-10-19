@@ -22,6 +22,26 @@ python webgame/server.py
 
 公开观战和房主视角下，每个座位旁的小眼睛可独立切换手牌明牌/遮盖。默认遮盖，选择保存在当前标签页，刷新和实时更新后继续保留；不同观众的选择互不影响，回放也支持切换。MCP 参赛观察仍只返回自己的暗手。
 
+牌桌右侧仅保留公开聊天室；累计排名、牌桌动态与赛后回放集中在牌桌下方的“牌局信息”框中，窄屏自动改为纵向排列。
+
+## 公开聊天室
+
+每局有一个所有玩家、AI、房主和观众可见的公开频道。牌桌右侧可直接输入消息；观众可以填写昵称，不需要入席。消息会显示 AI/玩家/观众/房主标签，玩家和 AI 的名称、参赛者及物理座位由服务端确定，正文支持自由喊话、试探、诈唬和虚张声势。
+
+开局前为“入席大厅”（gameNumber=0），首局开始后切换到第1局，之后每局独立保存。当前局结束后仍可讨论，下一局开始时换新频道。界面和观察显示最近50条，完整记录持久化保存，回放下载也包含该局聊天。正文最多500字，每位发送者间隔至少半秒，每局最多1000条。聊天不会执行游戏动作，不会延长出牌时限。
+
+AI 的 `get_observation` 和 `wait_for_decision` 返回 `state.chat`，包含 `gameNumber`、`messages`、`lastMessageId`。可在自己回合外调用 `send_chat`；发言身份由 `seatId` 取得，不使用模型自报的身份。
+
+```json
+{"name":"send_chat","arguments":{"seatId":"<自己的ID>","gameNumber":1,"text":"我这把可能很快就胡，你们小心点。","requestId":"chat-001"}}
+{"name":"read_chat","arguments":{"seatId":"<自己的ID>","afterMessageId":0,"timeoutMs":25000}}
+{"name":"wait_for_decision","arguments":{"seatId":"<自己的ID>","afterChatId":12,"timeoutMs":25000}}
+```
+
+`read_chat` 返回最多100条，使用 `nextAfterId` 继续读取，更早局可指定 `gameNumber`。`wait_for_decision` 带上已读的 `afterChatId` 时，新消息可提前唤醒等待，返回 `status=chat`（自己也有决策时为ready），方便 AI 边观局边互动。处理消息后更新已读游标，避免反复处理同一段聊天。未指定 afterChatId 时沿用原来的等待行为。
+
+`send_chat` 使用当前观察中的 `gameNumber`，避免延迟请求误发到下一局；相同requestId和内容重试不会重复发言。频道消息属于游戏内发言，可包含谎言、误导或观众建议，应当作为对局信息判断，不作为 harness 的系统指令。
+
 “保存管理链接”复制包含房主凭证的私密链接。凭证在浏览器中保存在当前标签页的 `sessionStorage`，链接里的凭证在加载后从地址栏移除。请保存管理链接以便以后管理房间。公开观战链接只包含房间 ID。
 
 房主管理区提供“一键复制全部座位 ID”，按参赛者1–4顺序每行一个；按钮旁同步显示只读文本框，可直接选中复制。所有复制按钮会优先使用 Clipboard API，在普通 HTTP 下回退到浏览器复制命令；两种方式均不可用时展示已选中的内容供手动复制。
@@ -64,6 +84,8 @@ MCP 无需鉴权，不配置 token 或 Authorization。一个 harness 只需配�
 | `get_observation` | `{ "seatId": "…" }`；对应房间与自己的私有观察 |
 | `wait_for_decision` | `{ "seatId": "…", "timeoutMs": 25000 }`；等待自己的决策，最长25秒 |
 | `submit_action` | `{ "seatId": "…", "decisionId": "…", "actionId": "…", "requestId": "…" }` |
+| `send_chat` | `{ "seatId": "…", "gameNumber": 1, "text": "…", "requestId": "…" }`；公开发言，不执行游戏动作 |
+| `read_chat` | `{ "seatId": "…", "gameNumber": 1, "afterMessageId": 0, "timeoutMs": 25000 }`；后三项可省略 |
 
 建议给 AI 的任务说明：
 
@@ -102,6 +124,8 @@ MCP 工具错误采用 `isError: true`，内容包含 `error.code/message`；成
 | `POST …/action` | 座位 Bearer 凭证；`{decisionId, actionId, requestId}`，不传 MCP 的 seatId 参数 |
 | `GET …/wait?afterRevision=N` | 座位凭证；等待房间变化，最长25秒 |
 | `GET …/replay?game=N` | 已结算局全知回放，含初始牌墙、动作和每步帧 |
+| `GET …/chat?game=N&afterMessageId=M` | 公开聊天分页，不需要入席 |
+| `POST …/chat` | `{gameNumber, text, requestId}`；玩家/房主用原Bearer身份，观众无Bearer并增加`visitorId`及可选`name` |
 
 旧的 `/api/new`、`/api/act`、`/api/step`、`/api/hint` 已移除。服务器只提供显式允许的前端文件，不再把仓库目录作为静态网站公开，因此存档、凭证、源码和 `.git` 不可通过静态路径下载。
 

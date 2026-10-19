@@ -48,6 +48,81 @@ def finish(store, room, data):
 
 
 class ArenaTests(unittest.TestCase):
+    def test_public_chat_identity_retry_and_decision_unchanged(self):
+        store,room,data=prepared(games=2)
+        before=copy.deepcopy(room.game.view())
+        payload={'gameNumber':1,'text':'我就差一张了，你们信吗？','requestId':'bluff'}
+        posted=store.post_chat(room.id,data['seatIds'][2],payload)
+        self.assertEqual(posted['message']['sender'],{'kind':'ai','name':'AI 2','participant':2,'seat':2})
+        self.assertEqual(room.game.view(),before)
+        self.assertTrue(store.post_chat(room.id,data['seatIds'][2],payload)['duplicate'])
+        self.assertEqual(len(room.chat_messages),1)
+        with self.assertRaises(ArenaError):store.post_chat(room.id,data['seatIds'][2],payload|{'text':'changed'})
+        with self.assertRaises(ArenaError) as ctx:
+            store.post_chat(room.id,data['seatIds'][2],payload|{'requestId':'spam'})
+        self.assertEqual(ctx.exception.code,'chat_rate_limited')
+        audience=store.post_chat(room.id,None,{'gameNumber':1,'text':'<script>alert(1)</script>',
+            'requestId':'viewer','visitorId':'visitor-1','name':'观众甲','sender':{'kind':'ai'}})
+        self.assertEqual(audience['message']['sender'],{'kind':'spectator','name':'观众甲'})
+        self.assertEqual(room.view(data['seatIds'][0])['chat']['messages'][-1],audience['message'])
+        self.assertEqual(store.read_chat(data['seatIds'][1],after_id=posted['message']['id'])['messages'],[audience['message']])
+        with self.assertRaises(ArenaError):store.post_chat(room.id,None,{'gameNumber':0,'text':'wrong round','requestId':'x','visitorId':'x'})
+        restored=Room.restore(room.record())
+        self.assertEqual(restored.chat_messages,room.chat_messages)
+        self.assertEqual(restored.chat_requests,room.chat_requests)
+        finish(store,room,data)
+        with store.condition:store.commit(room,{'op':'start','at':time.time(),'seed':99})
+        self.assertEqual(room.view()['chat']['gameNumber'],2)
+        self.assertEqual(room.view()['chat']['messages'],[])
+        self.assertEqual(store.read_chat(data['seatIds'][0],game_number=1)['messages'],restored.chat_messages)
+        self.assertTrue(store.post_chat(room.id,data['seatIds'][2],payload)['duplicate'])
+        self.assertEqual(store.replay(room,1)['chat']['messages'],restored.chat_messages)
+
+    def test_chat_wakes_ai_and_storage_rollback(self):
+        store,room,data=prepared()
+        d=room.game.decision(0)
+        store.submit(data['seatIds'][0],{'decisionId':d['decisionId'],'actionId':'a0','requestId':'daque-chat'})
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            waiting=pool.submit(store.wait,data['seatIds'][0],timeout=2,decision_only=True,after_chat_id=0)
+            reading=pool.submit(store.read_chat,data['seatIds'][1],timeout=2)
+            store.post_chat(room.id,None,{'gameNumber':1,'text':'观众来围观了','requestId':'hello','visitorId':'v'})
+            self.assertEqual(waiting.result(timeout=3)['status'],'chat')
+            self.assertEqual(reading.result(timeout=3)['status'],'messages')
+        before=copy.deepcopy(room.record())
+        with patch.object(store,'save',side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):store.post_chat(room.id,data['seatIds'][3],{'gameNumber':1,'text':'x','requestId':'disk'})
+        self.assertEqual(room.record(),before)
+        for invalid in ('',' '*10,'x'*501):
+            with self.assertRaises(ArenaError):store.post_chat(room.id,data['seatIds'][3],{'gameNumber':1,'text':invalid,'requestId':'invalid'})
+
+    def test_chat_paging_and_room_isolation(self):
+        store,room,data=prepared()
+        now=time.time()
+        for i in range(105):
+            with patch('arena.time.time',return_value=now+i):
+                store.post_chat(room.id,data['seatIds'][0],{'gameNumber':1,'text':f'message {i}','requestId':f'msg-{i}'})
+        first=store.read_chat(data['seatIds'][1])
+        self.assertEqual(len(first['messages']),100)
+        self.assertEqual(first['messages'][0]['id'],1)
+        self.assertTrue(first['hasMore'])
+        second=store.read_chat(data['seatIds'][1],after_id=first['nextAfterId'])
+        self.assertEqual(len(second['messages']),5)
+        self.assertFalse(second['hasMore'])
+        self.assertTrue(room.view()['chat']['hasEarlier'])
+        self.assertEqual(len(room.view()['chat']['messages']),50)
+        _,other,other_data=prepared(store,seed=17)
+        self.assertEqual(store.read_chat(other_data['seatIds'][0])['messages'],[])
+
+    def test_chat_survives_server_store_restart(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as directory:
+            store,room,data=prepared(ArenaStore(directory))
+            payload={'gameNumber':1,'text':'服务重启后还能看见我','requestId':'durable-chat'}
+            result=store.post_chat(room.id,data['seatIds'][0],payload)
+            restored=ArenaStore(directory)
+            self.assertEqual(restored.room(room.id).chat_view(),room.chat_view())
+            self.assertTrue(restored.post_chat(room.id,data['seatIds'][0],payload)['duplicate'])
+            self.assertEqual(restored.read_chat(data['seatIds'][1])['messages'],[result['message']])
+
     def test_fourth_distinct_join_auto_starts_once(self):
         store=ArenaStore()
         data=store.create({'games':2})

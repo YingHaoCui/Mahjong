@@ -70,13 +70,16 @@ try {
   await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp')));
   clients.push(client);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length,6);
+  assert.equal(tools.tools.length,8);
   for (let i=0;i<4;i++) {
     const joined = await client.callTool({name:'join_seat',arguments:{name:`模型 ${i+1}`,seatId:seatIds[i]}});
     assert.equal(joined.structuredContent.participant,i);
   }
   // The fourth AI join starts the game without any owner click.
   await page.waitForFunction(() => document.getElementById('roomStatus').textContent.includes('对局进行中'));
+  const bluff=await client.callTool({name:'send_chat',arguments:{seatId:seatIds[0],gameNumber:1,text:'我这把可能很快就胡，你们小心点。',requestId:'opening-bluff'}});
+  assert.equal(bluff.structuredContent.message.sender.kind,'ai');
+  await page.getByText('我这把可能很快就胡，你们小心点。',{exact:true}).waitFor();
   const publicRoom = await (await fetch(`${base}/api/rooms/${roomId}`)).json();
   assert.ok(publicRoom.game.players.every(p=>!('hand' in p)));
   let moves=0;
@@ -125,6 +128,27 @@ try {
   const publicPage=await spectator.newPage();
   await publicPage.goto(`${base}/#room=${second.roomId}`);
   await publicPage.locator('.player').first().waitFor();
+  assert.equal(await publicPage.locator('.arena-layout > aside > section').count(),1);
+  assert.equal(await publicPage.locator('#gameInfo .info-block').count(),3);
+  assert.ok(await publicPage.locator('#gameInfo').evaluate(n=>n.getBoundingClientRect().top>=document.getElementById('table').getBoundingClientRect().bottom));
+  await publicPage.locator('#chatGuestName').fill('验收观众');
+  await publicPage.locator('#chatText').fill('你们是不是都在做清一色？');
+  await publicPage.locator('#chatSend').click();
+  await publicPage.getByText('你们是不是都在做清一色？',{exact:true}).waitFor();
+  const aiChat=await client.callTool({name:'read_chat',arguments:{seatId:second.seatIds[1]}});
+  assert.equal(aiChat.structuredContent.messages.at(-1).sender.kind,'spectator');
+  assert.equal(aiChat.structuredContent.messages.at(-1).sender.name,'验收观众');
+  const deadlineBefore=(await client.callTool({name:'get_observation',arguments:{seatId:second.seatIds[1]}})).structuredContent.game.decision.deadline;
+  const aiSaid=await client.callTool({name:'send_chat',arguments:{seatId:second.seatIds[1],gameNumber:1,text:'我的牌可没那么简单，猜猜看。',requestId:'chat-e2e'}});
+  assert.ok(!aiSaid.isError,JSON.stringify(aiSaid));
+  await publicPage.getByText('我的牌可没那么简单，猜猜看。',{exact:true}).waitFor();
+  assert.equal((await client.callTool({name:'get_observation',arguments:{seatId:second.seatIds[1]}})).structuredContent.game.decision.deadline,deadlineBefore);
+  await human.locator('#chatText').fill('<b>我先打个招呼</b>');
+  await human.locator('#chatSend').click();
+  await publicPage.getByText('<b>我先打个招呼</b>',{exact:true}).waitFor();
+  assert.equal(await publicPage.locator('.chat-message b').count(),0);
+  await publicPage.reload();
+  await publicPage.getByText('你们是不是都在做清一色？',{exact:true}).waitFor();
   assert.equal(await publicPage.locator('.player .tile-row .tile:not(.back)').count(),0);
   assert.equal(await publicPage.locator('.eye-toggle').count(),4);
   await publicPage.getByRole('button',{name:'显示第1座位手牌',exact:true}).click();
