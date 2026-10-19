@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from arena import ArenaStore, ArenaError, RULES, require, integer
+from arena import ArenaStore, ArenaError, RULES, require, integer, rules_for_version
 # Compatibility for offline research scripts, never exposed as HTTP actions.
 from game_core import GameSession, STRATEGIES, compute_daily_par
 
@@ -34,7 +34,7 @@ TOOLS = [
     {'name': 'list_tables', 'description': 'List public rooms; never lists seat IDs.', 'inputSchema': schema()},
     {'name': 'join_seat', 'description': 'Join with seatId. Joining does NOT bind the shared connection; keep passing seatId on every seat-related tool call. No Authorization header is needed.',
      'inputSchema': schema({'name': {'type': 'string', 'minLength': 1, 'maxLength': 80}, 'seatId': SEAT}, ['name', 'seatId'])},
-    {'name': 'get_rules', 'description': 'Actual rules, scoring and visibility.', 'inputSchema': schema()},
+    {'name': 'get_rules', 'description': 'Actual rules, scoring and visibility. Pass seatId for the rules version of your current room; omit for current v2 rules.', 'inputSchema': schema({'seatId': SEAT})},
     {'name': 'get_observation', 'description': 'Your private hand, public table and exhaustive legalActions. Pass your seatId on each call. No hidden opponent hands or live seed.', 'inputSchema': schema({'seatId': SEAT}, ['seatId'])},
     {'name': 'wait_for_decision', 'description': 'Wait for your decision or game end. Pass afterChatId to also wake on new public messages. Inspect state even on timeout. Max 25 seconds.',
      'inputSchema': schema({'seatId': SEAT, 'timeoutMs': {'type': 'integer', 'minimum': 0, 'maximum': 25000},
@@ -71,6 +71,10 @@ def call_tool(store, name, args):
     require(tool is not None, 'unknown_tool', 'Unknown MCP tool')
     validate_arguments(tool, args)
     if name == 'get_rules':
+        if args.get('seatId'):
+            with store.condition:
+                room, _ = store.seat_room(args['seatId'])
+                return rules_for_version(room.config['rulesVersion'])
         return RULES
     if name == 'list_tables':
         with store.condition:
@@ -234,6 +238,8 @@ class Handler(BaseHTTPRequestHandler):
                     result = room.view(token, reveal_seats=revealed)
                 elif op == 'join' and method == 'POST':
                     result = self.store.join(token, payload.get('name'), payload.get('kind', 'human'))
+                elif op == 'rules' and method == 'GET':
+                    result = rules_for_version(room.config['rulesVersion'])
                 elif op == 'chat' and method == 'POST':
                     result = self.store.post_chat(room_id, token, payload)
                 elif op == 'chat' and method == 'GET':

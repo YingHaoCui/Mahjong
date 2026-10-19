@@ -4,7 +4,7 @@ base_score = 1
 #base_score = 400
     
 # judge tianhu,dihu
-def judge_tiandihu(hu_player, numWl):
+def judge_tiandihu(hu_player, numWl, dealer=None):
     '''Judge tianhu and dihu
         Args:
             hu_player (object)
@@ -13,6 +13,17 @@ def judge_tiandihu(hu_player, numWl):
             hu_way (string)
             hu_times (int): fanfan
     '''
+    if dealer is not None and not dealer.legacy_rules:
+        if 'zimo' not in hu_player.hu_way:
+            return None
+        if hu_player.player_id == 0 and not dealer.act_history and not hu_player.pile:
+            return ['tianhu', 32]
+        if hu_player.player_id != 0 and dealer.draw_times[hu_player.player_id] == 1 and not hu_player.pile:
+            interrupted = any(e[1] in ('pong', 'kong', 'ankong', 'jiakong', 'hu', 'zimo', 'robkong')
+                              or (e[0] == hu_player.player_id and e[1] == 'discard') for e in dealer.act_history)
+            if not interrupted and dealer.act_history and dealer.act_history[-1] == [hu_player.player_id, 'draw']:
+                return ['dihu', 32]
+        return None
     if hu_player.player_id == 0 and numWl == 55:
         return ["tianhu", 32]
     if (hu_player.player_id == 1 and numWl == 54) or (hu_player.player_id == 2 and numWl == 53) \
@@ -84,7 +95,7 @@ def judge_qingyise(hand, Pile):
     return None
 
 
-def compute_hu_score(hu_player, players, numWl, dianpao_player):
+def compute_hu_score(hu_player, players, numWl, dianpao_player, dealer=None):
     '''Consider zimo, qingyise and (pengpenghu, qidui, jingoudiao) and compute all related players' score
     Args:
         players (object)
@@ -107,8 +118,10 @@ def compute_hu_score(hu_player, players, numWl, dianpao_player):
             n_gen += 1
 
             
-    result0 = judge_tiandihu(hu_player, numWl) # Check if 'tian-di-hu'
+    result0 = judge_tiandihu(hu_player, numWl, dealer=dealer)
     if result0:
+        if dealer is not None and not dealer.legacy_rules:
+            hu_player.hu_way.append(result0[0])
         n_tdhu = 0 #number of other players when tiandihu
         tdhu_id = [] # id of other players when tiandihu
         for player in players:
@@ -316,11 +329,12 @@ def update_finalScore(dealer,players):
     for p in WeiTingpai:
         p.hand.sort(key=lambda t: t[0:2])
                        
-    if WeiTingpai:
-        for player in WeiTingpai:
+    refund_players = WeiTingpai if dealer.legacy_rules else WeiTingpai + Huazhu
+    if refund_players:
+        for player in refund_players:
             if player.kongScore: #return the points received from other players when player konged
                 for kscore in player.kongScore: # [card, other_player_id, +points]
-                    if kscore[0] and kscore[2] > 0:
+                    if kscore[0] and kscore[2] > 0 and (dealer.legacy_rules or 'beihujiaozhuanyi' not in kscore[3:]):
                         p = players[kscore[1]]
                         p.myscore += kscore[2]
                         n_id = p.kongScore.index([kscore[0], player.player_id, -kscore[2]])

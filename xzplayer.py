@@ -159,6 +159,7 @@ class MahjongPlayer(object):
         if card not in self.hand:
             print('card %s is not in hand %s' %(card, self.hand))
         self.hand.pop(self.hand.index(card))
+        dealer.drawn_cards[self.player_id] = None
 
         #2020022709-sl: record all public information
         dealer.table.append(card)
@@ -196,6 +197,7 @@ class MahjongPlayer(object):
             Cards (object): The cards (containing 3 identical tiles) to pong.
         '''
         #sl the player may have, say, 3 B9, if he decides to pong B9 even when he can kong
+        dealer.drawn_cards[self.player_id] = None
         for card in cards[0:2]: #pop two identical tiles
             self.hand.pop(self.hand.index(card))
         self.pile.append(cards[0:3])
@@ -230,6 +232,7 @@ class MahjongPlayer(object):
             Cardx (list): The Mahjong tile to jiaKong.
         '''
         
+        dealer.drawn_cards[self.player_id] = None
         cards = [cardx]*3
         if cards not in self.pile or cardx not in self.hand:
             return None
@@ -264,7 +267,7 @@ class MahjongPlayer(object):
 
         numWl = dealer.numWl
         #numWl = len(dealer.deck)
-        score.compute_hu_score(self, players, numWl, jiakong_player)
+        score.compute_hu_score(self, players, numWl, jiakong_player, dealer=dealer)
         ''' compute_hu_score updates the scores and score records of all players when one player hu'''
 
         #2020022709-sl: record all public information
@@ -292,7 +295,7 @@ class MahjongPlayer(object):
         numWl = dealer.numWl
         #numWl = len(dealer.deck)
         ''' compute_hu_score updates the scores and score records of all players when one player hu'''
-        score.compute_hu_score(self, players, numWl, dianpao_player)        
+        score.compute_hu_score(self, players, numWl, dianpao_player, dealer=dealer)
         
         #2020022709-sl: record all public information
         score_record =  self.scoreRecords[-1] # ['zimo', zimo_id, hu_times, +hu_times*base_score]
@@ -326,7 +329,7 @@ class MahjongPlayer(object):
         #numWl = len(dealer.deck)
         numWl = dealer.numWl
         #2020022809-sl: here dianpao_player is an object
-        score.compute_hu_score(self, players, numWl, dianpao_player)
+        score.compute_hu_score(self, players, numWl, dianpao_player, dealer=dealer)
 
         #2020022709-sl: record all public information
         score_record =  self.scoreRecords[-1] # ['hu', dianpao_player.player_id, hu_times, +hu_times*base_score]

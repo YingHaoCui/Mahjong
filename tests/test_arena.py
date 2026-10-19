@@ -26,6 +26,9 @@ def prepared(store=None, seed=42, policy='forfeit', games=1):
         for i, token in enumerate(data['seatIds']):
             room.join(token, f'AI {i}', 'ai')
         store.commit(room, {'op': 'start', 'at': time.time(), 'seed': seed})
+        for s in list(room.game.pending):
+            d=room.game.decision(s)
+            store.submit(data['seatIds'][s],{'decisionId':d['decisionId'],'actionId':d['legalActions'][0]['actionId'],'requestId':f'exchange-{s}'})
     return store, room, data
 
 
@@ -136,7 +139,7 @@ class ArenaTests(unittest.TestCase):
         self.assertEqual(room.status,'waiting')
         state=store.join(data['seatIds'][3],'AI 3','ai')
         self.assertEqual(state['status'],'playing')
-        self.assertEqual(state['game']['decision']['phase'],'daque')
+        self.assertEqual(state['game']['decision']['phase'],'exchange')
         first=room.game
         store.join(data['seatIds'][3],'AI reconnected','ai')
         store.tick()
@@ -240,7 +243,7 @@ class ArenaTests(unittest.TestCase):
             d = room.game.decision(s)
             store.submit(data['seatIds'][s], {'decisionId': d['decisionId'], 'actionId': 'a2', 'requestId': f'daque{s}'})
         self.assertEqual([p.daque_color for p in room.game.players], [1, 2, 2, 2])
-        self.assertEqual(room.game.phase, 'discard')
+        self.assertIn(room.game.phase, ('discard','zikong','zimo'))
 
     def test_multi_hu_arrival_order_and_secrecy(self):
         def make():
@@ -275,6 +278,21 @@ class ArenaTests(unittest.TestCase):
         self.assertEqual([p.player_id for p in a.round.winners], [1,2])
         self.assertEqual([p.myscore for p in a.players], [p.myscore for p in b.players])
         self.assertEqual(a.dealer.act_history,b.dealer.act_history)
+        # Blood-battle play continues after these wins; neither opponents nor
+        # default spectators may learn the winners' concealed hands.
+        self.assertEqual(a.stage, 'play')
+        self.assertTrue(all('hand' not in p for p in a.view()['players']))
+        for participant in range(4):
+            view = a.view(participant)
+            self.assertEqual(['hand' in p for p in view['players']],
+                             [s == view['yourSeat'] for s in range(4)])
+        revealed = a.view(reveal_seats=[1])
+        self.assertEqual(['hand' in p for p in revealed['players']],
+                         [False, True, False, False])
+        self.assertEqual(revealed['players'][1]['hand'], sorted(a.players[1].hand))
+        self.assertTrue(all('hand' in p for p in a.view(reveal=True)['players']))
+        a.stage = 'over'
+        self.assertTrue(all('hand' in p for p in a.view()['players']))
 
     def test_determinism_no_global_rng(self):
         random.seed(99)
@@ -291,6 +309,12 @@ class ArenaTests(unittest.TestCase):
         for seed in (3, 17, 24):
             old=GameSession(seed=seed,human=None)
             game=ArenaGame(seed,1,time.time(),120)
+            for s in range(4):
+                d=game.decision(s)
+                game.apply(s,d['decisionId'],d['legalActions'][0]['actionId'],time.time())
+            old.dealer,old.players,old.round=copy.deepcopy((game.dealer,game.players,game.round))
+            for p in old.players:p.get_daque_color()
+            old.dealer.dqc=[p.daque_color for p in old.players]
             for s in range(4):
                 d=game.decision(s)
                 game.apply(s,d['decisionId'],f'a{old.players[s].daque_color}',time.time())
@@ -377,7 +401,7 @@ class ArenaTests(unittest.TestCase):
             with self.assertRaises(OSError):store.submit(data['seatIds'][0],payload)
         self.assertEqual(room.game.view(),before)
         self.assertNotIn((0,'failure'),room.requests)
-        with patch.object(ArenaGame,'apply',side_effect=RuntimeError('engine broke')):
+        with patch.object(room.game,'apply',side_effect=RuntimeError('engine broke')):
             with self.assertRaises(ArenaError) as ctx:store.submit(data['seatIds'][0],payload)
         self.assertEqual(ctx.exception.code,'engine_error')
         self.assertEqual(room.status,'invalid')
@@ -430,7 +454,7 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual(result['structuredContent']['participant'],i)
         self.assertEqual(result['structuredContent']['status'],'playing')
         obs=self.mcp('get_observation',{'seatId':tokens[0]})['structuredContent']
-        self.assertEqual(obs['game']['decision']['phase'],'daque')
+        self.assertEqual(obs['game']['decision']['phase'],'exchange')
         d=obs['game']['decision']
         self.assertFalse(self.mcp('submit_action',{'seatId':tokens[0],'decisionId':d['decisionId'],'actionId':'a0','requestId':'http'}).get('isError',False))
         self.assertTrue(self.mcp('get_observation',{'seatId':'bad'})['isError'])

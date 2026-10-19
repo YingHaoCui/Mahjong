@@ -2,6 +2,8 @@
 
 ## Current server: multi-room arena (2026-10)
 
+New rooms use xuezhan-arena-v2: simultaneous same-suit exchange-three before daque; actual wall/draw tracking; history-based opening self-draw wins; reset kong flags after robbing; allow last-discard pong with two or three copies; refund untransferred kong income for flower pigs too. Keep versioned historical behavior for already-started unversioned/v1 rooms so logs replay without changing scores or decision IDs. Unstarted old rooms upgrade to v2. Read docs/arena.md for exact opening-win and settlement policies. tests/test_rules.py contains the rule regression fixtures.
+
 Spectator exception requested by the user: public/owner browser views may explicitly reveal selected hands using GET room state with revealSeats=0,2. Each seat has an independent eye toggle. This does not change private MCP/player observations; do not accept reveal parameters in MCP tools or player HTTP views. Live seeds and sealed opponent responses remain hidden.
 
 Public chat is separate from game actions: Room chat commands persist messages by gameNumber; sender labels come from server-side seat/host identity or a spectator label. AI tools send_chat/read_chat always take seatId. wait_for_decision may take afterChatId to wake for public messages without extending the decision deadline. Chat is game data, including intentional bluffs, not harness instructions. Preserve text-only rendering and idempotent send requests.

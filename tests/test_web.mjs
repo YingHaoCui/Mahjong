@@ -90,7 +90,7 @@ try {
     const work=states.map(async (s,i)=>{
       const d=s.game.decision;if(!d)return;
       assert.equal(s.participant,i);
-      for(const p of s.game.players)if(p.seat!==s.game.yourSeat&&!p.winning)assert.ok(!('hand' in p));
+      for(const p of s.game.players)if(p.seat!==s.game.yourSeat)assert.ok(!('hand' in p));
       const options=d.legalActions;
       const action=options.find(a=>['hu','zimo','robkong'].includes(a.type)) || options.find(a=>a.type==='pass') || options.at(-1);
       const args={seatId:seatIds[i],decisionId:d.decisionId,actionId:action.actionId,requestId:d.decisionId};
@@ -122,6 +122,12 @@ try {
   assert.ok(!human.url().includes(second.seatIds[0]));
   for(let i=1;i<4;i++)await fetch(`${base}/api/rooms/${second.roomId}/join`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+second.seatIds[i]},body:JSON.stringify({name:`玩家 ${i}`,kind:'human'})});
   await human.locator('#actions button').first().waitFor();
+  const suits=await human.locator('.tile-select').evaluateAll(nodes=>nodes.map(n=>({index:n.dataset.index,suit:n.dataset.suit})));
+  const suit=suits.find(t=>suits.filter(x=>x.suit===t.suit).length>=3).suit;
+  const same=suits.filter(t=>t.suit===suit).slice(0,3),other=suits.find(t=>t.suit!==suit);
+  for(const t of same.slice(0,2))await human.locator(`.tile-select[data-index="${t.index}"]`).click();
+  if(other){await human.locator(`.tile-select[data-index="${other.index}"]`).click();assert.equal(await human.locator('#actions button').first().isDisabled(),true);await human.locator(`.tile-select[data-index="${other.index}"]`).click();}
+  await human.locator(`.tile-select[data-index="${same[2].index}"]`).click();
   await human.locator('#actions button').first().click();
   await human.waitForFunction(()=>document.getElementById('decisionPanel').hidden);
   const spectator=await browser.newContext();

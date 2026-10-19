@@ -7,7 +7,8 @@ from copy import deepcopy
 class MahjongDealer(object):
     ''' Initialize a mahjong dealer class
     '''
-    def __init__(self, rng=None):
+    def __init__(self, rng=None, legacy_rules=False):
+        self.legacy_rules = legacy_rules
         self.rng = rng if rng is not None else random
         self.deck = init_deck() #sl from xzutils
         self.shuffle()
@@ -18,7 +19,8 @@ class MahjongDealer(object):
         self.win_info = [None]*4 # public win_info of each player: None, ['zimo', card, score], ['hu', card, score]
         self.discard_lists = [[] for _ in range(4)] # record each player's list of discarded tiles
         self.draw_times = [0]*4 # record each player's time of drawing a card from the Wall
-        self.numWl = 55
+        self.numWl = 55 if legacy_rules else len(self.deck)
+        self.drawn_cards = [None]*4
         self.act_history = [] # record the action history of the game
                                 # [ [i, 'draw'], [i, 'discard', t], [j, 'pong', t], [j, 'kong', t], [k, 'zimo', t], [i, 'hu', t] ... ]
     def n_hu(self):
@@ -42,9 +44,14 @@ class MahjongDealer(object):
             player.hand.append(self.deck.pop())
             
         #2020022709-sl: record all public information
-        if num == 1 and self.numWl <= 55:
+        opening_topup = num == 1 and player.player_id == 0 and len(self.deck) == 55 and not self.act_history
+        if not self.legacy_rules:
+            self.numWl = len(self.deck)
+        if num == 1 and (self.legacy_rules or not opening_topup):
             self.draw_times[player.player_id] += 1
-            self.numWl += -1
+            if self.legacy_rules:
+                self.numWl += -1
+            self.drawn_cards[player.player_id] = player.hand[-1]
             self.act_history.append([player.player_id, 'draw'])
             #print('Player %s draws %s' %(player.player_id,player.hand[-1]))
             #print(self.draw_times, self.numWl)

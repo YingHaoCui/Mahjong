@@ -157,6 +157,8 @@ class MahjongRound(object):
                         self.valid_act = 'self_check'
                         
                     else: #perform robkong for each player who accepts hu
+                        if not self.dealer.legacy_rules:
+                            self.kong_index = 0
                         cur_playerx = self.player_before_act #sl the jiakong player
                         self.dealer.table.append(self.jiakong_card)#y 多个玩家抢杠时，桌面上只添加1张抢杠牌。为后面信息输出正确，放在这里！
                         for player in self.Hu_accept:
@@ -260,6 +262,8 @@ class MahjongRound(object):
         elif action == 'robkong':
             ''' This acction is activated by a jiakong and the current huer accepts to rob'''
             #print('test: robkong accept')
+            if self.valid_act == 'robkong' and not self.dealer.legacy_rules:
+                self.kong_index = 0
             self.Hu_accept.append(players[self.current_player])
             if len(self.Hu_accept) == 1:
                 players[self.player_before_act].cancel_jiakong(self.jiakong_card)

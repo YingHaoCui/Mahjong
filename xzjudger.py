@@ -36,7 +36,7 @@ class MahjongJudger(object):
             if hand.count(last_card) == 3 and dealer.deck:
                 return 'kong', player, [last_card]*4
             # check pong
-            if hand.count(last_card) == 2:
+            if hand.count(last_card) == 2 or (hand.count(last_card) == 3 and not dealer.legacy_rules):
                 return 'pong', player, [last_card]*3
         return False, None, None
 
