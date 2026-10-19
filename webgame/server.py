@@ -207,8 +207,16 @@ class Handler(BaseHTTPRequestHandler):
                 role, _ = room.identity(token)
                 require(token is None or role != 'public', 'unauthorized', 'Invalid room credential', 401)
                 if op == 'state' and method == 'GET':
+                    raw = q.get('revealSeats', [''])
+                    require(len(raw) == 1, 'invalid_arguments', 'Use one revealSeats parameter')
+                    try:
+                        revealed = [integer(int(s), 'revealSeats', 0, 3) for s in raw[0].split(',')] if raw[0] else []
+                    except ValueError:
+                        raise ArenaError('invalid_arguments', 'revealSeats must contain seat indexes 0..3')
+                    require(len(revealed) <= 4 and len(set(revealed)) == len(revealed),
+                            'invalid_arguments', 'revealSeats must contain distinct seat indexes')
                     self.store.expire_room(room, time.time())
-                    result = room.view(token)
+                    result = room.view(token, reveal_seats=revealed)
                 elif op == 'join' and method == 'POST':
                     result = self.store.join(token, payload.get('name'), payload.get('kind', 'human'))
                 elif op in ('start', 'stop') and method == 'POST':

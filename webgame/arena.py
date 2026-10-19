@@ -36,7 +36,7 @@ RULES = {
     'scoring': '平胡1分；自摸×2、抢杠×2、杠上花/炮×2、碰碰胡×2、七对×4、金钩钓×4、清一色×4，每根×2；天胡/地胡按原引擎固定32分。无额外封顶。',
     'payments': '点炮者支付；自摸向尚未胡牌的对手收取。暗杠每个未胡对手付2，明杠点杠者付2，加杠每个未胡对手付1。',
     'settlement': '保留原引擎查大叫、查花猪（16分）、退税、呼叫转移；胡牌顺序不是比赛排名。',
-    'visibility': '暗杠牌面公开（沿用本项目规则）；暗手和摸牌仅自己可见，胡牌时公开完整手牌。定缺同时提交，全部完成后公开。',
+    'visibility': '暗杠牌面公开（沿用本项目规则）；参赛者观察中的暗手和摸牌仅自己可见，网页观众可用各席小眼睛主动明牌/遮盖。胡牌时公开完整手牌。定缺同时提交，全部完成后公开。',
     'competition': '累计净得分；每局循环换座，参与者身份不变。种子仅局后公开。超时托管的局标记 assisted。',
 }
 
@@ -170,12 +170,12 @@ class ArenaGame:
                  if phase in ('hu', 'robkong') else [self.round.current_player])
         self.open_decisions(seats, phase, now)
 
-    def view(self, participant=None, reveal=False):
+    def view(self, participant=None, reveal=False, reveal_seats=None):
         own = self.seat_for(participant) if participant is not None else None
         over = self.stage == 'over'
         players = []
         for s, p in enumerate(self.players):
-            visible = over or reveal or own == s or p.winning
+            visible = over or reveal or s in (reveal_seats or ()) or own == s or p.winning
             item = {'seat': s, 'participant': self.participant(s), 'nHand': len(p.hand),
                     'pile': copy.deepcopy(p.pile), 'daque': p.daque_color if self.stage != 'daque' else None,
                     'score': p.myscore, 'winning': p.winning, 'huWay': list(p.hu_way),
@@ -275,8 +275,10 @@ class Room:
                 'joined': sum(s['joined'] for s in self.seats), 'revision': self.revision,
                 'gameNumber': len(self.games), 'games': self.config['games']}
 
-    def view(self, token=None):
+    def view(self, token=None, reveal_seats=None):
         role, participant = self.identity(token)
+        require(not reveal_seats or role in ('public', 'owner'),
+                'spectator_only', 'Hand reveal is only available in spectator view', 403)
         leaderboard = []
         for i, seat in enumerate(self.seats):
             finished = [g for g in self.games if g.stage == 'over']
@@ -291,7 +293,7 @@ class Room:
                                                 for c in self.commands)})
         return self.summary() | {'config': self.config, 'role': role, 'participant': participant,
                                  'seats': leaderboard, 'failure': self.failure,
-                                 'game': self.game.view(participant) if self.game else None,
+                                 'game': self.game.view(participant, reveal_seats=reveal_seats) if self.game else None,
                                  'serverTime': time.time()}
 
     def record(self):

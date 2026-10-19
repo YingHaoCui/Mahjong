@@ -4,6 +4,7 @@ const SUITS = ['条', '万', '筒'];
 const ACTIONS = {daque:'定缺', discard:'打出', pong:'碰', kong:'明杠', ankong:'暗杠', jiakong:'加杠', hu:'胡', zimo:'自摸', robkong:'抢杠胡', pass:'过', draw:'摸牌'};
 const STATUS = {waiting:'等待入席 · 满员自动开始',playing:'对局进行中',between_games:'本局已结算 · 等待下一局',complete:'比赛结束',forfeit:'超时判负 · 比赛结束',stopped:'比赛已结束',invalid:'引擎异常 · 本局无效'};
 let roomId = '', token = '', state = null, credentials = [], replay = null, replayTimer = null, pollVersion = 0, noticeTimer;
+let revealedSeats = new Set();
 function el(tag, text, cls) {const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
 function button(label, fn, cls='quiet') {const b=el('button',label,cls);b.type='button';b.addEventListener('click',()=>Promise.resolve().then(fn).catch(report));return b;}
 function notice(message) {$('notice').textContent=message;$('notice').hidden=false;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>$('notice').hidden=true,5500);}
@@ -38,10 +39,11 @@ async function rooms() {const data=await api('/api/rooms',undefined,'');$('rooms
 async function openRoom(id, credential) {
   pollVersion++;roomId=id;token=credential??sessionStorage.getItem(seatKey(id))??sessionStorage.getItem(ownerKey(id))??'';
   history.replaceState(null,'',`/#${new URLSearchParams({room:id})}`);
+  try {revealedSeats=new Set(JSON.parse(sessionStorage.getItem(`mahjong-reveal:${id}`)||'[]'));} catch (_) {revealedSeats=new Set();}
   $('lobby').hidden=true;$('room').hidden=false;replay=null;clearInterval(replayTimer);credentials=[];
   await refresh();poll(pollVersion);
 }
-async function refresh() {state=await api(endpoint(''));render();if(state.role==='owner'&&!credentials.length){credentials=(await api(endpoint('credentials'))).seatIds;renderCredentials();$('credentialDetails').open=state.status==='waiting';}}
+async function refresh() {const spectating=!token||token===sessionStorage.getItem(ownerKey(roomId));const query=spectating&&revealedSeats.size?`?revealSeats=${[...revealedSeats].sort().join(',')}`:'';state=await api(endpoint('')+query);render();if(state.role==='owner'&&!credentials.length){credentials=(await api(endpoint('credentials'))).seatIds;renderCredentials();$('credentialDetails').open=state.status==='waiting';}}
 async function poll(version) {
   while(version===pollVersion){try{if(token&&state?.role==='seat'&&!['complete','forfeit','stopped','invalid'].includes(state.status)){const r=await api(endpoint(`wait?afterRevision=${state.revision}`));if(version!==pollVersion)return;state=r.state;render();}else{await new Promise(r=>setTimeout(r,1200));if(version!==pollVersion)return;await refresh();}}catch(e){if(version!==pollVersion)return;report(e);await new Promise(r=>setTimeout(r,3000));}}
 }
@@ -54,7 +56,33 @@ function renderTable(game) {
   const waiting=game.waitingFor==='responses'?' · 等待响应裁决':game.waitingFor==='daque'?' · 等待四席定缺':game.waitingFor==='turn'?' · 等待玩家决策':'';
   const meta=el('div',`第 ${game.number} 局 · 牌墙 ${game.wall} 张${waiting}${game.assisted?' · 辅助对局':''}${replay?' · 回放视角':''}`,'table-meta');table.append(meta);
   const own=game.yourSeat;const order=own===null||own===undefined?[2,3,1,0]:[(own+2)%4,(own+3)%4,(own+1)%4,own];
-  for(const s of order){const p=game.players[s];const participant=state.seats[p.participant];const box=el('section',undefined,`player${game.activeSeats.includes(s)&&game.stage!=='over'?' active':''}${own===s?' mine':''}`);const title=el('div',undefined,'player-title');title.append(el('span',`${s+1}号位 · ${participant.name}${own===s?' · 你':''}`),el('strong',`${p.score>=0?'+':''}${p.score}`));box.append(title,el('div',`${p.winning?'已胡 · ':''}${p.daque===null?'定缺未公开':'缺'+SUITS[p.daque]} · ${participant.kind==='ai'?'AI':participant.kind==='human'?'人类':'未入席'}`,'muted'));const melds=el('div',undefined,'melds');p.pile.forEach(m=>melds.append(tiles(m,0,true)));box.append(melds,tiles(p.hand,p.nHand));if(p.drawn)box.append(el('div',`本次摸牌：${p.drawn[1]}${SUITS[p.drawn[0]]}`,'muted'));box.append(el('div','弃牌','muted'),tiles(p.discards,0,true));table.append(box);}
+  for(const s of order){
+    const p=game.players[s], participant=state.seats[p.participant];
+    const spectating=own===null||own===undefined||Boolean(replay);
+    const shown=spectating?revealedSeats.has(s):Boolean(p.hand);
+    const box=el('section',undefined,`player${game.activeSeats.includes(s)&&game.stage!=='over'?' active':''}${own===s?' mine':''}`);
+    box.dataset.seat=s;
+    const title=el('div',undefined,'player-title');
+    title.append(el('span',`${s+1}号位 · ${participant.name}${own===s?' · 你':''}`),el('strong',`${p.score>=0?'+':''}${p.score}`));
+    if(spectating){
+      const eye=button('',async()=>{
+        if(revealedSeats.has(s))revealedSeats.delete(s);else revealedSeats.add(s);
+        sessionStorage.setItem(`mahjong-reveal:${roomId}`,JSON.stringify([...revealedSeats]));
+        if(replay)replayFrame();else {render();await refresh();}
+      },'quiet eye-toggle');
+      const label=`${shown?'遮盖':'显示'}第${s+1}座位手牌`;
+      eye.setAttribute('aria-label',label);eye.title=label;eye.setAttribute('aria-pressed',String(shown));
+      const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+      const shape=document.createElementNS(svg.namespaceURI,'path');shape.setAttribute('d','M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0');svg.append(shape);
+      if(!shown){const slash=document.createElementNS(svg.namespaceURI,'path');slash.setAttribute('d','M3 3 21 21');svg.append(slash);}
+      eye.append(svg);title.append(eye);
+    }
+    box.append(title,el('div',`${p.winning?'已胡 · ':''}${p.daque===null?'定缺未公开':'缺'+SUITS[p.daque]} · ${participant.kind==='ai'?'AI':participant.kind==='human'?'人类':'未入席'}`,'muted'));
+    const melds=el('div',undefined,'melds');p.pile.forEach(m=>melds.append(tiles(m,0,true)));
+    const hand=tiles(shown?p.hand:null,p.nHand);hand.classList.add('hand-tiles');box.append(melds,hand);
+    if(shown&&p.drawn)box.append(el('div',`本次摸牌：${p.drawn[1]}${SUITS[p.drawn[0]]}`,'muted'));
+    box.append(el('div','弃牌','muted'),tiles(p.discards,0,true));table.append(box);
+  }
 }
 function render() {
   if(!state)return;$('roomId').textContent=state.roomId;$('roomName').textContent=state.name;$('roomStatus').textContent=`${STATUS[state.status]} · ${state.gameNumber}/${state.games} 局${Number.isInteger(state.failure?.participant)?' · '+state.seats[state.failure.participant].name+' 超时':''}`;

@@ -374,6 +374,24 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(e.exception.code,403)
         self.assertEqual(self.request('/healthz')[0],200)
 
+    def test_spectator_selective_reveal_does_not_change_player_views(self):
+        store,room,data=prepared(self.store)
+        base=f'/api/rooms/{room.id}'
+        view=self.request(base+'?revealSeats=0,2')[1]
+        self.assertEqual(['hand' in p for p in view['game']['players']],[True,False,True,False])
+        self.assertIsNone(view['game']['decision'])
+        self.assertNotIn('seed',view['game'])
+        self.assertEqual(['hand' in p for p in self.request(base)[1]['game']['players']],[False]*4)
+        own=self.mcp('get_observation',{'seatId':data['seatIds'][1]})['structuredContent']
+        self.assertEqual(['hand' in p for p in own['game']['players']],[False,True,False,False])
+        self.assertTrue(self.mcp('get_observation',{'seatId':data['seatIds'][1],'revealSeats':[0,2]})['isError'])
+        with self.assertRaises(HTTPError) as error:
+            self.request(base+'?revealSeats=0',token=data['seatIds'][1])
+        self.assertEqual(error.exception.code,403)
+        for query in ('4','-1','x','0,0','0&revealSeats=1'):
+            with self.assertRaises(HTTPError) as error:self.request(base+'?revealSeats='+query)
+            self.assertEqual(error.exception.code,400)
+
     def test_shared_harness_no_auth_explicit_seats(self):
         _,data=self.request('/api/rooms',{'games':1})
         shared='one-platform-token'

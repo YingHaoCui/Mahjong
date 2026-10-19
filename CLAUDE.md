@@ -2,6 +2,8 @@
 
 ## Current server: multi-room arena (2026-10)
 
+Spectator exception requested by the user: public/owner browser views may explicitly reveal selected hands using GET room state with revealSeats=0,2. Each seat has an independent eye toggle. This does not change private MCP/player observations; do not accept reveal parameters in MCP tools or player HTTP views. Live seeds and sealed opponent responses remain hidden.
+
 `webgame/server.py` now serves the four-seat arena and stateless Streamable HTTP MCP at `/mcp`. Read `docs/arena.md` before editing its API, UI, persistence or deployment. `webgame/arena.py` is the authoritative multi-player adapter; `webgame/arena.js` and `arena.css` are the current UI. MCP has no connection authentication: every seat-related tool requires an explicit seatId argument and never binds a shared connector to a seat. Browser HTTP still uses seat/owner Bearer credentials. No original strategy is invoked for arena turns. Never expose live seeds, hidden hands, pending opponent responses or storage files. Keep MCP and browser actions on the same validation path. `Dockerfile.git` supports remote Git builds; production uses one process and a persistent `/data` volume.
 
 The human-vs-three-bots HTTP endpoints and broad static repository serving described below are **historical**, not current server behavior. `GameSession`, offline PWA sources and strategy scripts remain for research and regression checks. Do not reconnect them to arena turns. Run `python -m unittest discover -s tests -v`; optional full browser + official MCP SDK verification is `npm run test:web` (see arena docs).
